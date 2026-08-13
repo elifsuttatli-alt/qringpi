@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+import requests
 from signalrcore.hub_connection_builder import HubConnectionBuilder
 from signalrcore.protocol.json_hub_protocol import JsonHubProtocol
 
@@ -13,8 +14,22 @@ class SignalRService:
         self.hub_url = hub_url
         self.connection = None
         self.device_id = "49B7E50FBB53A79454424DA3B8053F8EEC2B0428B202B21C835B203C9716426F"
+        self._cached_ip = None
 
-    def start_connection(self, token: str):
+    def get_public_ip(self) -> str:
+        """Cihazın dış ağ IP adresini otomatik tespit eder."""
+        if self._cached_ip:
+            return self._cached_ip
+        try:
+            res = requests.get("https://api.ipify.org?format=json", timeout=5)
+            if res.ok:
+                self._cached_ip = res.json().get("ip")
+                return self._cached_ip
+        except Exception:
+            pass
+        return "81.214.248.9"  # Yedek varsayılan IP
+
+    def start_connection(self, token: str, client_ip: str = None):
         def _connect():
             try:
                 full_url = f"{self.hub_url}?access_token={token}"
@@ -38,8 +53,9 @@ class SignalRService:
                 print("\n[SIGNALR] Soket bağlantısı kuruldu!")
                 time.sleep(1)
 
-                # Odaya kayıt olup dinlemeyi aktifleştiriyoruz
-                self.register_guest_ip()
+                # Odaya kayıt olup dinlemeyi aktifleştiriyoruz (IP parametresiyle)
+                ip_to_use = client_ip if client_ip else self.get_public_ip()
+                self.register_guest_ip(ip_to_use)
 
             except Exception as e:
                 print(f"\n[SIGNALR HATA] Soket bağlanırken hata: {e}")
@@ -47,16 +63,16 @@ class SignalRService:
         t = threading.Thread(target=_connect, daemon=True)
         t.start()
 
-    def register_guest_ip(self):
-        """Sunucuya cihaz kaydını gönderir."""
+    def register_guest_ip(self, ip_address: str):
+        """Sunucuya cihaz kaydını dinamik IP ile gönderir."""
         try:
             payload = [
                 self.device_id,
-                "81.214.248.9",
+                ip_address,  # Dinamik dış ağ IP'si kullanılıyor
                 self.device_id
             ]
             self.connection.send("RegisterGuestIP", payload)
-            print("[SIGNALR] Cihaz odaya kaydedildi. Sadece CallRejected dinleniyor...\n")
+            print(f"[SIGNALR] Cihaz odaya kaydoldu ({ip_address}). Sadece CallRejected dinleniyor...\n")
         except Exception as e:
             print(f"[SIGNALR HATA] RegisterGuestIP gönderilemedi: {e}")
 
