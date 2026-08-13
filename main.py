@@ -66,7 +66,7 @@ def main():
 
     # İSTEDİĞİN MENÜ EKRANI
     print("\n================================")
-    print("      SEÇİM YAPINIZ    ")
+    print("      SEÇİM YAPIN    ")
     print("================================")
     print("1 - Taksi Çağır                  (1. Buton - GPIO 17)")
     print("2 - Çağrı Başlat                 (2. Buton - GPIO 27 Tık)")
