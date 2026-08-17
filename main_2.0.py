@@ -1,5 +1,4 @@
 import sys
-import time
 import threading
 from signal import pause
 
@@ -11,7 +10,7 @@ from signalr_service import SignalRService
 
 
 # ============================================================
-# DEVICE ID
+# DEVICE ID / SWITCH ID
 # ============================================================
 
 TAXI_DEVICE_ID = (
@@ -26,11 +25,37 @@ SWITCH_ID = "1002533340"
 
 
 # ============================================================
-# LOGIN
+# LOGIN BİLGİLERİ
 # ============================================================
 
 USERNAME = "samsung.canli@fsitip.com"
 PASSWORD = "Aa123456."
+
+
+# ============================================================
+# GPIO PINLERİ
+# ============================================================
+
+# 3 işlem butonu
+TAXI_BUTTON_PIN = 17       # Fiziksel Pin 11
+CALL_BUTTON_PIN = 27       # Fiziksel Pin 13
+SWITCH_BUTTON_PIN = 22     # Fiziksel Pin 15
+
+# Sistem ON / OFF butonu
+POWER_BUTTON_PIN = 12      # Fiziksel Pin 32
+
+
+# Trafik lambası
+BOOT_GREEN_PIN = 5         # Fiziksel Pin 29
+BOOT_YELLOW_PIN = 6        # Fiziksel Pin 31
+BOOT_RED_PIN = 13          # Fiziksel Pin 33
+
+
+# Ayrı durum LED'leri
+ACTION_GREEN_PIN = 23      # Fiziksel Pin 16
+ACTION_YELLOW_PIN = 24     # Fiziksel Pin 18
+ACTION_RED_PIN = 25        # Fiziksel Pin 22
+
 
 # ============================================================
 # LED KONTROL SINIFI
@@ -48,13 +73,17 @@ class StatusLEDs:
 
 
     def off(self):
-
+        """Bütün LED'leri kapat."""
         self.green.off()
         self.yellow.off()
         self.red.off()
 
 
     def loading(self):
+        """
+        İşlem devam ediyor:
+        Sarı LED yanıp söner.
+        """
 
         self.off()
 
@@ -66,18 +95,27 @@ class StatusLEDs:
 
 
     def success(self):
+        """
+        Başarılı:
+        Sadece yeşil LED yanar.
+        """
 
         self.off()
         self.green.on()
 
 
     def fail(self):
+        """
+        Başarısız:
+        Sadece kırmızı LED yanar.
+        """
 
         self.off()
         self.red.on()
 
 
     def close(self):
+        """Program kapanırken GPIO kaynaklarını bırak."""
 
         self.off()
 
@@ -87,64 +125,82 @@ class StatusLEDs:
 
 
 # ============================================================
-# MAIN
+# ANA PROGRAM
 # ============================================================
 
 def main():
 
-    print("\n[SİSTEM] Program çalışıyor.")
-    print("[SİSTEM] Başlatmak için ON/OFF butonuna basın.")
-
-
     # --------------------------------------------------------
-    # TRAFİK LAMBASI
+    # LED GRUPLARI
     # --------------------------------------------------------
 
+    # Trafik lambası
     boot_leds = StatusLEDs(
-        green_pin=5,
-        yellow_pin=6,
-        red_pin=13
+        green_pin=BOOT_GREEN_PIN,
+        yellow_pin=BOOT_YELLOW_PIN,
+        red_pin=BOOT_RED_PIN
     )
 
 
-    # --------------------------------------------------------
-    # NORMAL DURUM LEDLERİ
-    # --------------------------------------------------------
-
+    # Ayrı 3 durum LED'i
     action_leds = StatusLEDs(
-        green_pin=23,
-        yellow_pin=24,
-        red_pin=25
+        green_pin=ACTION_GREEN_PIN,
+        yellow_pin=ACTION_YELLOW_PIN,
+        red_pin=ACTION_RED_PIN
     )
 
 
     # --------------------------------------------------------
-    # BUTONLAR
+    # PROGRAM İLK AÇILDIĞINDA
+    # --------------------------------------------------------
+
+    # Sistem henüz başlatılmadı -> KIRMIZI
+    boot_leds.fail()
+
+    # İşlem LED'leri kapalı
+    action_leds.off()
+
+
+    print("\n=======================================================")
+    print("              QRING RASPBERRY PI SİSTEMİ")
+    print("=======================================================")
+    print("[SİSTEM] Program çalışıyor.")
+    print("[SİSTEM] Sistem şu anda KAPALI.")
+    print("[SİSTEM] Başlatmak için ON/OFF butonuna basın.")
+    print("=======================================================\n")
+
+
+    # --------------------------------------------------------
+    # BUTONLARI TANIMLA
     # --------------------------------------------------------
 
     btn_taxi = Button(
-        17,
+        TAXI_BUTTON_PIN,
+        pull_up=True,
         bounce_time=0.1
     )
 
     btn_call = Button(
-        27,
+        CALL_BUTTON_PIN,
+        pull_up=True,
         bounce_time=0.1
     )
 
     btn_switch = Button(
-        22,
+        SWITCH_BUTTON_PIN,
+        pull_up=True,
         bounce_time=0.1
     )
 
     power_button = Button(
-        12,
+        POWER_BUTTON_PIN,
+        pull_up=True,
         bounce_time=0.2
     )
 
 
     # --------------------------------------------------------
-    # PROGRAM DURUMU
+    # SİSTEM DEĞİŞKENLERİ
     # --------------------------------------------------------
 
     system_active = False
@@ -154,7 +210,11 @@ def main():
 
     signalr = SignalRService()
 
+    # Aynı anda iki işlem butonunun API isteği göndermesini engeller
     action_lock = threading.Lock()
+
+    # ON/OFF işlemlerinin üst üste binmesini engeller
+    power_lock = threading.Lock()
 
 
     # ========================================================
@@ -164,25 +224,12 @@ def main():
     def show_menu():
 
         print("\n=======================================================")
-        print("                  SİSTEM AKTİF")
+        print("                    SİSTEM AKTİF")
         print("=======================================================")
-
-        print(
-            "1. Buton -> Taksi Çağır"
-        )
-
-        print(
-            "2. Buton -> Çağrı Başlat"
-        )
-
-        print(
-            "3. Buton -> Anahtar/Röle Durumu Değiştir"
-        )
-
-        print(
-            "ON/OFF Butonu -> Sistemi Kapat"
-        )
-
+        print("1. BUTON -> Taksi Çağır")
+        print("2. BUTON -> Çağrı Başlat")
+        print("3. BUTON -> Anahtar/Röle Durumu Değiştir")
+        print("ON/OFF    -> Sistemi Kapat")
         print("=======================================================\n")
 
 
@@ -191,17 +238,20 @@ def main():
     # ========================================================
 
     def call_rejected():
+        """
+        SignalR üzerinden CallRejected geldiğinde çalışır.
+        """
 
         if not system_active:
             return
 
-        print(
-            "[LED] Çağrı reddedildi -> KIRMIZI"
-        )
+        print("\n[CALL] Çağrı reddedildi.")
+        print("[LED] İşlem durumu -> KIRMIZI")
 
         action_leds.fail()
 
 
+    # SignalRService'e callback'i ver
     signalr.set_rejection_callback(
         call_rejected
     )
@@ -217,24 +267,45 @@ def main():
         nonlocal system_starting
         nonlocal api
 
-        if system_active or system_starting:
+
+        # Zaten açıksa tekrar başlatma
+        if system_active:
+            print("[SİSTEM] Sistem zaten açık.")
             return
+
+
+        # Zaten başlatılıyorsa tekrar başlatma
+        if system_starting:
+            print("[SİSTEM] Sistem zaten başlatılıyor.")
+            return
+
 
         system_starting = True
 
-        print("\n[SİSTEM] Başlatılıyor...")
+
+        print("\n=======================================================")
+        print("[SİSTEM] BAŞLATILIYOR")
+        print("=======================================================")
 
 
-        # Bağlantı kurulurken trafik lambası sarı
+        # ----------------------------------------------------
+        # LOGIN BAŞLIYOR
+        # ----------------------------------------------------
+
+        # Kırmızıyı kapat
+        # Sarıyı yanıp söndür
         boot_leds.loading()
 
-        # Normal LED'leri temizle
-        action_leds.off()
+        print("[LED] Trafik lambası -> SARI")
+        print("[SİSTEM] Login isteği gönderiliyor...")
 
 
         try:
 
-            # API session
+            # ------------------------------------------------
+            # API SESSION
+            # ------------------------------------------------
+
             session = create_api_session()
 
             api = APIService(
@@ -242,27 +313,42 @@ def main():
             )
 
 
-            # ----------------------------
-            # LOGIN
-            # ----------------------------
-
-            print("[SİSTEM] Oturum açılıyor...")
+            # ------------------------------------------------
+            # LOGIN + TOKEN
+            # ------------------------------------------------
 
             token = api.login(
                 USERNAME,
                 PASSWORD
             )
 
+
+            # Token gerçekten geldi mi kontrol et
+            if not token:
+                raise RuntimeError(
+                    "Login başarılı görünmesine rağmen token alınamadı."
+                )
+
+
             print("[SİSTEM] Login başarılı.")
+            print("[SİSTEM] Token başarıyla alındı.")
 
 
-            # ----------------------------
+            # ------------------------------------------------
+            # TOKEN GELDİ -> YEŞİL
+            # ------------------------------------------------
+
+            boot_leds.success()
+
+            print("[LED] Trafik lambası -> YEŞİL")
+
+
+            # ------------------------------------------------
             # SIGNALR
-            # ----------------------------
+            # ------------------------------------------------
 
-            print(
-                "[SİSTEM] SignalR bağlantısı bekleniyor..."
-            )
+            print("[SİSTEM] SignalR bağlantısı kuruluyor...")
+
 
             connected = signalr.start_connection(
                 token=token,
@@ -272,29 +358,34 @@ def main():
 
             if not connected:
 
-                raise ConnectionError(
-                    "SignalR bağlantısı kurulamadı."
-                )
+                # Burada trafik lambasını kırmızı yapmıyoruz.
+                # Çünkü yeşil LED TOKEN'ın başarılı alındığını temsil ediyor.
+
+                system_active = False
+                system_starting = False
+
+                print("\n[SIGNALR HATA] SignalR bağlantısı kurulamadı.")
+                print("[SİSTEM] Token alındı ancak sistem tamamen hazır değil.")
+                print("[LED] Trafik lambası YEŞİL kalıyor.")
+
+                return
 
 
-            # ----------------------------
-            # SUCCESS
-            # ----------------------------
+            # ------------------------------------------------
+            # SİSTEM HAZIR
+            # ------------------------------------------------
 
             system_active = True
             system_starting = False
 
-            print("[SİSTEM] Bağlantılar hazır.")
+
+            print("[SİSTEM] SignalR bağlantısı hazır.")
+            print("[SİSTEM] Sistem tamamen aktif.")
 
 
-            # Trafik lambası yeşil
+            # Yeşil burada SÖNMÜYOR
+            # Sistem açık kaldığı sürece yanmaya devam ediyor.
             boot_leds.success()
-
-            time.sleep(1)
-
-
-            # Menüden sonra trafik lambasını tamamen kapat
-            boot_leds.off()
 
 
             show_menu()
@@ -305,14 +396,20 @@ def main():
             system_active = False
             system_starting = False
 
-            print(
-                f"\n[SİSTEM HATA] {e}"
-            )
+
+            print("\n=======================================================")
+            print("[SİSTEM HATA]")
+            print(e)
+            print("=======================================================")
 
 
-            # Trafik lambası kırmızı
+            # Login / token başarısız -> KIRMIZI
             boot_leds.fail()
 
+            print("[LED] Trafik lambası -> KIRMIZI")
+
+
+            # SignalR yarım kaldıysa kapat
             signalr.stop_connection()
 
 
@@ -325,77 +422,89 @@ def main():
         nonlocal system_active
         nonlocal system_starting
 
-        if not system_active and not system_starting:
-            return
 
-        print("\n[SİSTEM] Kapatılıyor...")
+        print("\n=======================================================")
+        print("[SİSTEM] KAPATILIYOR")
+        print("=======================================================")
 
 
         system_active = False
         system_starting = False
 
 
+        # SignalR bağlantısını kapat
         signalr.stop_connection()
 
 
-        boot_leds.off()
+        # İşlem LED'lerini söndür
         action_leds.off()
 
 
-        print("[SİSTEM] SİSTEM OFF")
-        print(
-            "[SİSTEM] Tekrar başlatmak için "
-            "ON/OFF butonuna basın."
-        )
+        # Sistem kapalı -> trafik lambası KIRMIZI
+        boot_leds.fail()
+
+
+        print("[LED] Trafik lambası -> KIRMIZI")
+        print("[SİSTEM] Sistem kapalı.")
+        print("[SİSTEM] Yeniden başlatmak için ON/OFF butonuna basın.\n")
 
 
     # ========================================================
-    # POWER BUTTON
+    # POWER BUTONU
     # ========================================================
 
     def toggle_power():
 
-        if system_active:
-            stop_system()
+        if not power_lock.acquire(blocking=False):
+            return
 
-        else:
-            start_system()
+
+        try:
+
+            if system_active or system_starting:
+
+                stop_system()
+
+            else:
+
+                start_system()
+
+
+        finally:
+
+            power_lock.release()
 
 
     # ========================================================
-    # TAKSİ
+    # 1. BUTON -> TAKSİ ÇAĞIR
     # ========================================================
 
     def taxi_action():
 
         if not system_active:
 
-            print(
-                "[UYARI] Sistem kapalı."
-            )
-
+            print("[UYARI] Sistem kapalı. Önce sistemi başlatın.")
             return
 
 
-        # Aynı anda iki API isteği gitmesini engelle
-        if not action_lock.acquire(
-            blocking=False
-        ):
+        # Başka işlem devam ediyorsa yeni işlem başlatma
+        if not action_lock.acquire(blocking=False):
 
-            print(
-                "[UYARI] Başka bir işlem devam ediyor."
-            )
-
+            print("[UYARI] Başka bir işlem devam ediyor.")
             return
 
 
         try:
 
-            print("\n--- TAKSİ ÇAĞRILIYOR ---")
+            print("\n=======================================================")
+            print("TAKSİ ÇAĞRILIYOR")
+            print("=======================================================")
 
 
-            # Sarı yanıp söner
+            # İşlem devam ediyor
             action_leds.loading()
+
+            print("[LED] İşlem durumu -> SARI")
 
 
             result = api.call_taxi(
@@ -404,7 +513,7 @@ def main():
 
 
             print(
-                "Taksi İsteği Yanıtı:",
+                "[TAKSİ] API yanıtı:",
                 result
             )
 
@@ -412,16 +521,20 @@ def main():
             # Başarılı
             action_leds.success()
 
+            print("[LED] İşlem durumu -> YEŞİL")
+
 
         except Exception as e:
 
             print(
-                "Taksi hatası:",
+                "[TAKSİ HATA]",
                 e
             )
 
 
             action_leds.fail()
+
+            print("[LED] İşlem durumu -> KIRMIZI")
 
 
         finally:
@@ -430,37 +543,34 @@ def main():
 
 
     # ========================================================
-    # ÇAĞRI
+    # 2. BUTON -> ÇAĞRI BAŞLAT
     # ========================================================
 
     def call_action():
 
         if not system_active:
 
-            print(
-                "[UYARI] Sistem kapalı."
-            )
-
+            print("[UYARI] Sistem kapalı. Önce sistemi başlatın.")
             return
 
 
-        if not action_lock.acquire(
-            blocking=False
-        ):
+        if not action_lock.acquire(blocking=False):
 
-            print(
-                "[UYARI] Başka bir işlem devam ediyor."
-            )
-
+            print("[UYARI] Başka bir işlem devam ediyor.")
             return
 
 
         try:
 
-            print("\n--- ÇAĞRI BAŞLATILIYOR ---")
+            print("\n=======================================================")
+            print("ÇAĞRI BAŞLATILIYOR")
+            print("=======================================================")
 
 
+            # API isteği sürerken sarı
             action_leds.loading()
+
+            print("[LED] İşlem durumu -> SARI")
 
 
             result = api.start_call(
@@ -469,24 +579,32 @@ def main():
 
 
             print(
-                "Çağrı İsteği Yanıtı:",
+                "[ÇAĞRI] API yanıtı:",
                 result
             )
 
 
-            # API isteği başarılı
+            # API başarılı
             action_leds.success()
+
+            print("[LED] İşlem durumu -> YEŞİL")
+
+
+            # Daha sonra SignalR üzerinden CallRejected gelirse
+            # call_rejected() çalışacak ve LED kırmızıya dönecek.
 
 
         except Exception as e:
 
             print(
-                "Çağrı hatası:",
+                "[ÇAĞRI HATA]",
                 e
             )
 
 
             action_leds.fail()
+
+            print("[LED] İşlem durumu -> KIRMIZI")
 
 
         finally:
@@ -495,39 +613,34 @@ def main():
 
 
     # ========================================================
-    # SWITCH
+    # 3. BUTON -> SWITCH / RÖLE
     # ========================================================
 
     def switch_action():
 
         if not system_active:
 
-            print(
-                "[UYARI] Sistem kapalı."
-            )
-
+            print("[UYARI] Sistem kapalı. Önce sistemi başlatın.")
             return
 
 
-        if not action_lock.acquire(
-            blocking=False
-        ):
+        if not action_lock.acquire(blocking=False):
 
-            print(
-                "[UYARI] Başka bir işlem devam ediyor."
-            )
-
+            print("[UYARI] Başka bir işlem devam ediyor.")
             return
 
 
         try:
 
-            print(
-                "\n--- ANAHTAR DURUMU DEĞİŞTİRİLİYOR ---"
-            )
+            print("\n=======================================================")
+            print("ANAHTAR/RÖLE DURUMU DEĞİŞTİRİLİYOR")
+            print("=======================================================")
 
 
+            # İşlem sırasında sarı
             action_leds.loading()
+
+            print("[LED] İşlem durumu -> SARI")
 
 
             result = api.set_switch_status(
@@ -537,23 +650,28 @@ def main():
 
 
             print(
-                "Anahtar Yanıtı:",
+                "[SWITCH] API yanıtı:",
                 result
             )
 
 
+            # Başarılı
             action_leds.success()
+
+            print("[LED] İşlem durumu -> YEŞİL")
 
 
         except Exception as e:
 
             print(
-                "Anahtar hatası:",
+                "[SWITCH HATA]",
                 e
             )
 
 
             action_leds.fail()
+
+            print("[LED] İşlem durumu -> KIRMIZI")
 
 
         finally:
@@ -585,25 +703,38 @@ def main():
 
     except KeyboardInterrupt:
 
-        print("\n[SİSTEM] Program sonlandırılıyor...")
+        print("\n[SİSTEM] CTRL+C algılandı.")
+        print("[SİSTEM] Program tamamen kapatılıyor...")
 
 
     finally:
 
+        # SignalR
         signalr.stop_connection()
 
+
+        # LED'ler
         boot_leds.close()
         action_leds.close()
 
+
+        # Butonlar
         btn_taxi.close()
         btn_call.close()
         btn_switch.close()
         power_button.close()
 
-        print("[SİSTEM] GPIO bağlantıları kapatıldı.")
+
+        print("[SİSTEM] GPIO kaynakları kapatıldı.")
+        print("[SİSTEM] Program sonlandırıldı.")
+
 
         sys.exit(0)
 
+
+# ============================================================
+# PROGRAM BAŞLANGICI
+# ============================================================
 
 if __name__ == "__main__":
     main()
