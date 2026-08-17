@@ -9,9 +9,14 @@ from interceptor import create_api_session
 from api_service import APIService
 from signalr_service import SignalRService
 
+# OLED
+from luma.core.interface.serial import i2c
+from luma.oled.device import ssd1306
+from luma.core.render import canvas
+
 
 # ============================================================
-# DEVICE / SWITCH BİLGİLERİ
+# DEVICE / SWITCH BILGILERI
 # ============================================================
 
 TAXI_DEVICE_ID = (
@@ -34,41 +39,106 @@ PASSWORD = "Aa123456."
 
 
 # ============================================================
-# GPIO PINLERİ
+# GPIO PINLERI
 # ============================================================
 
-# ------------------------------------------------------------
-# İşlem butonları
-# ------------------------------------------------------------
-
+# Islem butonlari
 TAXI_BUTTON_PIN = 17       # Fiziksel Pin 11
 CALL_BUTTON_PIN = 27       # Fiziksel Pin 13
 SWITCH_BUTTON_PIN = 22     # Fiziksel Pin 15
 
-
-# ------------------------------------------------------------
 # Sistem ON / OFF butonu
-# ------------------------------------------------------------
-
 POWER_BUTTON_PIN = 12      # Fiziksel Pin 32
 
 
-# ------------------------------------------------------------
-# Trafik lambası
-# ------------------------------------------------------------
+# ============================================================
+# TRAFIK LAMBASI
+# ============================================================
 
 BOOT_GREEN_PIN = 5         # Fiziksel Pin 29
 BOOT_YELLOW_PIN = 6        # Fiziksel Pin 31
 BOOT_RED_PIN = 13          # Fiziksel Pin 33
 
 
-# ------------------------------------------------------------
-# Ayrı durum LED'leri
-# ------------------------------------------------------------
+# ============================================================
+# AYRI DURUM LEDLERI
+# ============================================================
 
 ACTION_GREEN_PIN = 23      # Fiziksel Pin 16
 ACTION_YELLOW_PIN = 24     # Fiziksel Pin 18
 ACTION_RED_PIN = 25        # Fiziksel Pin 22
+
+
+# ============================================================
+# OLED SINIFI
+# ============================================================
+
+class OLEDDisplay:
+
+    def __init__(self):
+
+        # I2C -> Bus 1
+        # OLED adresi -> 0x3C
+        serial = i2c(
+            port=1,
+            address=0x3C
+        )
+
+        self.device = ssd1306(
+            serial,
+            width=128,
+            height=64
+        )
+
+        self.lock = threading.Lock()
+
+        self.clear()
+
+
+    def show(
+        self,
+        line1="",
+        line2="",
+        line3="",
+        line4=""
+    ):
+        """
+        OLED ekrana maksimum 4 satir yazar.
+        """
+
+        with self.lock:
+
+            with canvas(self.device) as draw:
+
+                draw.text(
+                    (0, 0),
+                    str(line1),
+                    fill="white"
+                )
+
+                draw.text(
+                    (0, 16),
+                    str(line2),
+                    fill="white"
+                )
+
+                draw.text(
+                    (0, 32),
+                    str(line3),
+                    fill="white"
+                )
+
+                draw.text(
+                    (0, 48),
+                    str(line4),
+                    fill="white"
+                )
+
+
+    def clear(self):
+
+        with self.lock:
+            self.device.clear()
 
 
 # ============================================================
@@ -77,7 +147,12 @@ ACTION_RED_PIN = 25        # Fiziksel Pin 22
 
 class StatusLEDs:
 
-    def __init__(self, green_pin, yellow_pin, red_pin):
+    def __init__(
+        self,
+        green_pin,
+        yellow_pin,
+        red_pin
+    ):
 
         self.green = LED(green_pin)
         self.yellow = LED(yellow_pin)
@@ -91,7 +166,7 @@ class StatusLEDs:
 
 
     # --------------------------------------------------------
-    # Bütün LED'leri kapat
+    # Tum LED'leri sondur
     # --------------------------------------------------------
 
     def off(self):
@@ -106,7 +181,7 @@ class StatusLEDs:
 
 
     # --------------------------------------------------------
-    # Sarı yanıp sön
+    # Sari yanip sonsun
     # --------------------------------------------------------
 
     def loading(self):
@@ -130,7 +205,7 @@ class StatusLEDs:
 
 
     # --------------------------------------------------------
-    # Yeşil sürekli yan
+    # Yesil
     # --------------------------------------------------------
 
     def success(self):
@@ -148,7 +223,7 @@ class StatusLEDs:
 
 
     # --------------------------------------------------------
-    # Kırmızı sürekli yan
+    # Kirmizi
     # --------------------------------------------------------
 
     def fail(self):
@@ -166,7 +241,7 @@ class StatusLEDs:
 
 
     # --------------------------------------------------------
-    # GPIO kaynaklarını kapat
+    # GPIO kaynaklarini kapat
     # --------------------------------------------------------
 
     def close(self):
@@ -189,16 +264,22 @@ class StatusLEDs:
 def main():
 
     # ========================================================
+    # OLED
+    # ========================================================
+
+    oled = OLEDDisplay()
+
+
+    # ========================================================
     # LED GRUPLARI
     # ========================================================
 
-    # Trafik lambası
+    # Trafik lambasi
     boot_leds = StatusLEDs(
         green_pin=BOOT_GREEN_PIN,
         yellow_pin=BOOT_YELLOW_PIN,
         red_pin=BOOT_RED_PIN
     )
-
 
     # Normal 3 LED
     action_leds = StatusLEDs(
@@ -209,24 +290,27 @@ def main():
 
 
     # ========================================================
-    # PROGRAM İLK AÇILDIĞINDA
+    # PROGRAM ILK ACILDIGINDA
     # ========================================================
 
-    # Sistem henüz aktif değil
-    # Trafik lambası KIRMIZI
     boot_leds.fail()
-
-    # İşlem LED'leri kapalı
     action_leds.off()
+
+    oled.show(
+        "QRING SISTEM",
+        "",
+        "SISTEM KAPALI",
+        "ON tusuna basin"
+    )
 
 
     print("\n=======================================================")
-    print("              QRING RASPBERRY PI SİSTEMİ")
+    print("              QRING RASPBERRY PI SISTEMI")
     print("=======================================================")
-    print("[SİSTEM] Program çalışıyor.")
-    print("[SİSTEM] Sistem şu anda KAPALI.")
-    print("[LED] Trafik lambası -> KIRMIZI")
-    print("[SİSTEM] Başlatmak için ON/OFF butonuna basın.")
+    print("[SISTEM] Program calisiyor.")
+    print("[SISTEM] Sistem su anda KAPALI.")
+    print("[LED] Trafik lambasi -> KIRMIZI")
+    print("[SISTEM] Baslatmak icin ON/OFF butonuna basin.")
     print("=======================================================\n")
 
 
@@ -260,7 +344,7 @@ def main():
 
 
     # ========================================================
-    # SİSTEM DEĞİŞKENLERİ
+    # SISTEM DEGISKENLERI
     # ========================================================
 
     system_active = False
@@ -270,56 +354,41 @@ def main():
 
     signalr = SignalRService()
 
-
-    # Aynı anda iki işlem çalışmasın
     action_lock = threading.Lock()
-
-    # ON/OFF işlemleri üst üste binmesin
     power_lock = threading.Lock()
 
-
-    # Monitor thread'ini kapatmak için
     monitor_stop_event = threading.Event()
 
 
     # ========================================================
-    # MENÜ
+    # MENU
     # ========================================================
 
     def show_menu():
 
         print("\n=======================================================")
-        print("                    SİSTEM AKTİF")
+        print("                    SISTEM AKTIF")
         print("=======================================================")
-
-        print("1. BUTON -> Taksi Çağır")
-        print("2. BUTON -> Çağrı Başlat")
-        print("3. BUTON -> Anahtar/Röle Durumu Değiştir")
+        print("1. BUTON -> Taksi Cagir")
+        print("2. BUTON -> Cagri Baslat")
+        print("3. BUTON -> Anahtar/Role Durumu Degistir")
         print("ON/OFF    -> Sistemi Kapat")
-
-        print("=======================================================")
-        print("[LED] Trafik lambası YEŞİL yanmaya devam ediyor.")
         print("=======================================================\n")
+
+        # OLED
+        oled.show(
+            "QRING SISTEM",
+            "SISTEM AKTIF",
+            "BAGLANTI: OK",
+            "SECIM BEKLENIYOR"
+        )
 
 
     # ========================================================
-    # SIGNALR BAĞLANTI MONİTÖRÜ
+    # SIGNALR BAGLANTI MONITORU
     # ========================================================
 
     def connection_monitor():
-
-        """
-        SignalR bağlantısını sürekli kontrol eder.
-
-        Bağlantı varsa:
-            YEŞİL
-
-        Bağlantı geçici olarak kopmuşsa:
-            SARI yanıp söner
-
-        Sistem kapalıysa:
-            KIRMIZI
-        """
 
         while not monitor_stop_event.is_set():
 
@@ -327,19 +396,24 @@ def main():
 
                 if signalr.connected_event.is_set():
 
-                    # SignalR bağlantısı VAR
+                    # Baglanti varsa yesil
                     boot_leds.success()
 
                 else:
 
-                    # Sistem aktif ama SignalR geçici olarak yok
-                    # Otomatik reconnect bekleniyor
+                    # Baglanti gecici olarak yoksa sari
                     boot_leds.loading()
+
+                    oled.show(
+                        "QRING SISTEM",
+                        "BAGLANTI KOPTU",
+                        "YENIDEN",
+                        "BAGLANIYOR..."
+                    )
 
             time.sleep(0.2)
 
 
-    # Monitor thread
     monitor_thread = threading.Thread(
         target=connection_monitor,
         daemon=True
@@ -359,23 +433,29 @@ def main():
 
 
         print("\n=======================================================")
-        print("[CALL] ÇAĞRI REDDEDİLDİ")
+        print("[CALL] CAGRI REDDEDILDI")
         print("=======================================================")
 
-        # Ayrı işlem LED'lerini kırmızı yap
         action_leds.fail()
 
-        print("[LED] İşlem durumu -> KIRMIZI")
+        print("[LED] Islem durumu -> KIRMIZI")
 
 
-    # SignalR'dan CallRejected gelince bunu çalıştır
+        oled.show(
+            "CAGRI",
+            "",
+            "CAGRI REDDEDILDI",
+            "SONUC: HATA"
+        )
+
+
     signalr.set_rejection_callback(
         call_rejected
     )
 
 
     # ========================================================
-    # SİSTEMİ BAŞLAT
+    # SISTEMI BASLAT
     # ========================================================
 
     def start_system():
@@ -387,13 +467,13 @@ def main():
 
         if system_active:
 
-            print("[SİSTEM] Sistem zaten aktif.")
+            print("[SISTEM] Sistem zaten aktif.")
             return
 
 
         if system_starting:
 
-            print("[SİSTEM] Sistem zaten başlatılıyor.")
+            print("[SISTEM] Sistem zaten baslatiliyor.")
             return
 
 
@@ -401,21 +481,28 @@ def main():
 
 
         print("\n=======================================================")
-        print("[SİSTEM] BAŞLATILIYOR")
+        print("[SISTEM] BASLATILIYOR")
         print("=======================================================")
 
 
         # ----------------------------------------------------
-        # BAĞLANTI KURULUYOR
+        # LOGIN
         # ----------------------------------------------------
 
         boot_leds.loading()
-
         action_leds.off()
 
 
-        print("[LED] Trafik lambası -> SARI")
-        print("[SİSTEM] Login isteği hazırlanıyor...")
+        oled.show(
+            "QRING SISTEM",
+            "",
+            "LOGIN",
+            "YAPILIYOR..."
+        )
+
+
+        print("[LED] Trafik lambasi -> SARI")
+        print("[SISTEM] Login istegi hazirlaniyor...")
 
 
         try:
@@ -435,7 +522,7 @@ def main():
             # LOGIN
             # =================================================
 
-            print("[SİSTEM] Oturum açılıyor...")
+            print("[SISTEM] Oturum aciliyor...")
 
 
             token = api.login(
@@ -444,28 +531,32 @@ def main():
             )
 
 
-            # Token gerçekten geldi mi?
             if not token:
 
                 raise RuntimeError(
-                    "Sunucudan token alınamadı."
+                    "Sunucudan token alinamadi."
                 )
 
 
-            print("[SİSTEM] Login başarılı.")
-            print("[SİSTEM] Token başarıyla alındı.")
+            print("[SISTEM] Login basarili.")
+            print("[SISTEM] Token basariyla alindi.")
 
 
-            # Token geldi ama SignalR henüz bağlanmadı
-            # Bu nedenle SARI devam ediyor.
-            boot_leds.loading()
+            oled.show(
+                "QRING SISTEM",
+                "",
+                "TOKEN ALINDI",
+                "SIGNALR..."
+            )
 
 
             # =================================================
             # SIGNALR
             # =================================================
 
-            print("[SİSTEM] SignalR bağlantısı kuruluyor...")
+            print(
+                "[SISTEM] SignalR baglantisi kuruluyor..."
+            )
 
 
             connected = signalr.start_connection(
@@ -477,33 +568,33 @@ def main():
             if not connected:
 
                 raise ConnectionError(
-                    "SignalR bağlantısı kurulamadı."
+                    "SignalR baglantisi kurulamadi."
                 )
 
 
             # =================================================
-            # BAĞLANTI TAMAM
+            # SISTEM HAZIR
             # =================================================
 
             system_active = True
             system_starting = False
 
 
-            # SignalR bağlı -> YEŞİL
             boot_leds.success()
 
 
-            print("\n[SİSTEM] SignalR bağlantısı hazır.")
-            print("[SİSTEM] Sistem tamamen aktif.")
-            print("[LED] Trafik lambası -> YEŞİL")
+            print("\n[SISTEM] SignalR baglantisi hazir.")
+            print("[SISTEM] Sistem tamamen aktif.")
+            print("[LED] Trafik lambasi -> YESIL")
 
 
-            # ------------------------------------------------
-            # ÖNEMLİ:
-            # BURADA boot_leds.off() YOK.
-            #
-            # Menü geldiğinde yeşil SÖNMEYECEK.
-            # ------------------------------------------------
+            oled.show(
+                "QRING SISTEM",
+                "SISTEM AKTIF",
+                "BAGLANTI: OK",
+                "SECIM BEKLENIYOR"
+            )
+
 
             show_menu()
 
@@ -515,23 +606,30 @@ def main():
 
 
             print("\n=======================================================")
-            print("[SİSTEM HATA]")
+            print("[SISTEM HATA]")
             print(e)
             print("=======================================================")
 
 
-            # Bağlantı başarısız
             boot_leds.fail()
 
 
-            print("[LED] Trafik lambası -> KIRMIZI")
+            oled.show(
+                "QRING SISTEM",
+                "",
+                "BAGLANTI HATASI",
+                "SISTEM KAPALI"
+            )
+
+
+            print("[LED] Trafik lambasi -> KIRMIZI")
 
 
             signalr.stop_connection()
 
 
     # ========================================================
-    # SİSTEMİ KAPAT
+    # SISTEMI KAPAT
     # ========================================================
 
     def stop_system():
@@ -541,38 +639,43 @@ def main():
 
 
         print("\n=======================================================")
-        print("[SİSTEM] KAPATILIYOR")
+        print("[SISTEM] KAPATILIYOR")
         print("=======================================================")
 
 
-        # Önce sistem durumunu kapat
+        oled.show(
+            "QRING SISTEM",
+            "",
+            "SISTEM",
+            "KAPATILIYOR..."
+        )
+
+
         system_active = False
         system_starting = False
 
 
-        # SignalR bağlantısını kapat
         signalr.stop_connection()
 
-
-        # İşlem LED'lerini söndür
         action_leds.off()
 
-
-        # Sistem OFF -> KIRMIZI
         boot_leds.fail()
 
 
-        print("[LED] Trafik lambası -> KIRMIZI")
-        print("[SİSTEM] Sistem kapalı.")
+        print("[LED] Trafik lambasi -> KIRMIZI")
+        print("[SISTEM] Sistem kapali.")
 
-        print(
-            "[SİSTEM] Tekrar başlatmak için "
-            "ON/OFF butonuna basın.\n"
+
+        oled.show(
+            "QRING SISTEM",
+            "",
+            "SISTEM KAPALI",
+            "ON tusuna basin"
         )
 
 
     # ========================================================
-    # ON / OFF BUTONU
+    # ON/OFF BUTONU
     # ========================================================
 
     def toggle_power():
@@ -580,7 +683,6 @@ def main():
         if not power_lock.acquire(
             blocking=False
         ):
-
             return
 
 
@@ -601,7 +703,7 @@ def main():
 
 
     # ========================================================
-    # BUTON 1 -> TAKSİ ÇAĞIR
+    # BUTON 1 -> TAKSI
     # ========================================================
 
     def taxi_action():
@@ -609,8 +711,14 @@ def main():
         if not system_active:
 
             print(
-                "[UYARI] Sistem kapalı. "
-                "Önce ON/OFF butonuna basın."
+                "[UYARI] Sistem kapali."
+            )
+
+            oled.show(
+                "UYARI",
+                "",
+                "SISTEM KAPALI",
+                "ON tusuna basin"
             )
 
             return
@@ -621,7 +729,7 @@ def main():
         ):
 
             print(
-                "[UYARI] Başka bir işlem devam ediyor."
+                "[UYARI] Baska bir islem devam ediyor."
             )
 
             return
@@ -630,14 +738,22 @@ def main():
         try:
 
             print("\n=======================================================")
-            print("TAKSİ ÇAĞRILIYOR")
+            print("TAKSI CAGIRILIYOR")
             print("=======================================================")
 
 
-            # İşlem başladı -> SARI
             action_leds.loading()
 
-            print("[LED] İşlem durumu -> SARI")
+
+            oled.show(
+                "TAKSI",
+                "",
+                "CAGIRILIYOR...",
+                "LUTFEN BEKLEYIN"
+            )
+
+
+            print("[LED] Islem durumu -> SARI")
 
 
             result = api.call_taxi(
@@ -646,29 +762,45 @@ def main():
 
 
             print(
-                "[TAKSİ] API yanıtı:",
+                "[TAKSI] API yaniti:",
                 result
             )
 
 
-            # Başarılı -> YEŞİL
             action_leds.success()
 
-            print("[LED] İşlem durumu -> YEŞİL")
+
+            oled.show(
+                "TAKSI",
+                "",
+                "BASARILI",
+                "ISTEK GONDERILDI"
+            )
+
+
+            print("[LED] Islem durumu -> YESIL")
 
 
         except Exception as e:
 
             print(
-                "[TAKSİ HATA]",
+                "[TAKSI HATA]",
                 e
             )
 
 
-            # Hata -> KIRMIZI
             action_leds.fail()
 
-            print("[LED] İşlem durumu -> KIRMIZI")
+
+            oled.show(
+                "TAKSI",
+                "",
+                "HATA",
+                "ISTEK BASARISIZ"
+            )
+
+
+            print("[LED] Islem durumu -> KIRMIZI")
 
 
         finally:
@@ -677,7 +809,7 @@ def main():
 
 
     # ========================================================
-    # BUTON 2 -> ÇAĞRI BAŞLAT
+    # BUTON 2 -> CAGRI
     # ========================================================
 
     def call_action():
@@ -685,8 +817,14 @@ def main():
         if not system_active:
 
             print(
-                "[UYARI] Sistem kapalı. "
-                "Önce ON/OFF butonuna basın."
+                "[UYARI] Sistem kapali."
+            )
+
+            oled.show(
+                "UYARI",
+                "",
+                "SISTEM KAPALI",
+                "ON tusuna basin"
             )
 
             return
@@ -697,7 +835,7 @@ def main():
         ):
 
             print(
-                "[UYARI] Başka bir işlem devam ediyor."
+                "[UYARI] Baska bir islem devam ediyor."
             )
 
             return
@@ -706,14 +844,22 @@ def main():
         try:
 
             print("\n=======================================================")
-            print("ÇAĞRI BAŞLATILIYOR")
+            print("CAGRI BASLATILIYOR")
             print("=======================================================")
 
 
-            # API isteği devam ediyor -> SARI
             action_leds.loading()
 
-            print("[LED] İşlem durumu -> SARI")
+
+            oled.show(
+                "CAGRI",
+                "",
+                "BASLATILIYOR...",
+                "LUTFEN BEKLEYIN"
+            )
+
+
+            print("[LED] Islem durumu -> SARI")
 
 
             result = api.start_call(
@@ -722,33 +868,50 @@ def main():
 
 
             print(
-                "[ÇAĞRI] API yanıtı:",
+                "[CAGRI] API yaniti:",
                 result
             )
 
 
-            # API başarılı -> YEŞİL
             action_leds.success()
 
-            print("[LED] İşlem durumu -> YEŞİL")
+
+            oled.show(
+                "CAGRI",
+                "",
+                "BASARILI",
+                "CAGRI GONDERILDI"
+            )
 
 
-            # Eğer çağrı sonradan reddedilirse
+            print("[LED] Islem durumu -> YESIL")
+
+
+            # Cagri sonradan reddedilirse
             # SignalR -> call_rejected()
-            # çalışır ve LED KIRMIZI olur.
+            # OLED ve LED kirmizi olur.
 
 
         except Exception as e:
 
             print(
-                "[ÇAĞRI HATA]",
+                "[CAGRI HATA]",
                 e
             )
 
 
             action_leds.fail()
 
-            print("[LED] İşlem durumu -> KIRMIZI")
+
+            oled.show(
+                "CAGRI",
+                "",
+                "HATA",
+                "CAGRI BASARISIZ"
+            )
+
+
+            print("[LED] Islem durumu -> KIRMIZI")
 
 
         finally:
@@ -765,8 +928,14 @@ def main():
         if not system_active:
 
             print(
-                "[UYARI] Sistem kapalı. "
-                "Önce ON/OFF butonuna basın."
+                "[UYARI] Sistem kapali."
+            )
+
+            oled.show(
+                "UYARI",
+                "",
+                "SISTEM KAPALI",
+                "ON tusuna basin"
             )
 
             return
@@ -777,7 +946,7 @@ def main():
         ):
 
             print(
-                "[UYARI] Başka bir işlem devam ediyor."
+                "[UYARI] Baska bir islem devam ediyor."
             )
 
             return
@@ -786,14 +955,22 @@ def main():
         try:
 
             print("\n=======================================================")
-            print("ANAHTAR/RÖLE DURUMU DEĞİŞTİRİLİYOR")
+            print("ANAHTAR/ROLE DURUMU DEGISTIRILIYOR")
             print("=======================================================")
 
 
-            # İşlem başladı -> SARI
             action_leds.loading()
 
-            print("[LED] İşlem durumu -> SARI")
+
+            oled.show(
+                "SWITCH",
+                "",
+                "ISTEK",
+                "GONDERILIYOR..."
+            )
+
+
+            print("[LED] Islem durumu -> SARI")
 
 
             result = api.set_switch_status(
@@ -803,15 +980,23 @@ def main():
 
 
             print(
-                "[SWITCH] API yanıtı:",
+                "[SWITCH] API yaniti:",
                 result
             )
 
 
-            # Başarılı -> YEŞİL
             action_leds.success()
 
-            print("[LED] İşlem durumu -> YEŞİL")
+
+            oled.show(
+                "SWITCH",
+                "",
+                "BASARILI",
+                "DURUM DEGISTI"
+            )
+
+
+            print("[LED] Islem durumu -> YESIL")
 
 
         except Exception as e:
@@ -824,7 +1009,16 @@ def main():
 
             action_leds.fail()
 
-            print("[LED] İşlem durumu -> KIRMIZI")
+
+            oled.show(
+                "SWITCH",
+                "",
+                "HATA",
+                "ISTEK BASARISIZ"
+            )
+
+
+            print("[LED] Islem durumu -> KIRMIZI")
 
 
         finally:
@@ -833,7 +1027,7 @@ def main():
 
 
     # ========================================================
-    # BUTON EVENTLERİ
+    # BUTON EVENTLERI
     # ========================================================
 
     btn_taxi.when_pressed = taxi_action
@@ -846,7 +1040,7 @@ def main():
 
 
     # ========================================================
-    # PROGRAMI ÇALIŞIR DURUMDA TUT
+    # PROGRAMI ACIK TUT
     # ========================================================
 
     try:
@@ -854,51 +1048,51 @@ def main():
         pause()
 
 
-    # ========================================================
-    # CTRL + C
-    # ========================================================
-
     except KeyboardInterrupt:
 
-        print("\n[SİSTEM] CTRL+C algılandı.")
-        print("[SİSTEM] Program tamamen kapatılıyor...")
+        print("\n[SISTEM] CTRL+C algilandi.")
+        print("[SISTEM] Program kapatiliyor...")
 
 
     # ========================================================
-    # TEMİZLE
+    # TEMIZLIK
     # ========================================================
 
     finally:
 
-        # Monitor thread'e durmasını söyle
         monitor_stop_event.set()
 
-
-        # SignalR'ı kapat
         signalr.stop_connection()
 
-
-        # LED GPIO'larını bırak
         boot_leds.close()
         action_leds.close()
 
-
-        # Buton GPIO'larını bırak
         btn_taxi.close()
         btn_call.close()
         btn_switch.close()
         power_button.close()
 
 
-        print("[SİSTEM] GPIO kaynakları kapatıldı.")
-        print("[SİSTEM] Program sonlandırıldı.")
+        oled.show(
+            "QRING SISTEM",
+            "",
+            "PROGRAM",
+            "KAPATILDI"
+        )
 
+        time.sleep(1)
+
+        oled.clear()
+
+
+        print("[SISTEM] GPIO kaynaklari kapatildi.")
+        print("[SISTEM] Program sonlandirildi.")
 
         sys.exit(0)
 
 
 # ============================================================
-# PROGRAM BAŞLANGICI
+# PROGRAM BASLANGICI
 # ============================================================
 
 if __name__ == "__main__":
