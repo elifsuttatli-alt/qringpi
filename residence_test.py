@@ -156,23 +156,18 @@ def find_block(letter):
 
 def find_apartment(apartments, entered_number):
 
-    # 0 -> Yönetici
-    if entered_number == "0":
+    # Önce apartmentNo alanına bak
+    for apartment in apartments:
 
-        for apartment in apartments:
+        apartment_no = apartment.get("apartmentNo")
 
-            name = apartment.get(
-                "apartmentName",
-                ""
-            ).casefold()
+        if apartment_no is not None:
 
-            if "yönetici" in name or "yonetici" in name:
+            if str(apartment_no) == entered_number:
                 return apartment
 
-        return None
 
-
-    # Normal daire
+    # apartmentNo boşsa isimden bulmaya çalış
     target = f"Daire {entered_number}".casefold()
 
     for apartment in apartments:
@@ -185,8 +180,8 @@ def find_apartment(apartments, entered_number):
         if name == target:
             return apartment
 
-    return None
 
+    return None
 
 # ============================================================
 # ANA DONGU
