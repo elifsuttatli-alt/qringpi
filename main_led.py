@@ -1,7 +1,6 @@
-import sys
-import threading
 import time
-from signal import pause
+import threading
+import traceback
 
 from gpiozero import (
     Button,
@@ -28,7 +27,7 @@ PASSWORD = "Aa123456."
 
 
 # ============================================================
-# DEVICE ID'LER
+# DEVICE BILGILERI
 # ============================================================
 
 TAXI_DEVICE_ID = (
@@ -49,39 +48,32 @@ SWITCH_ID = "1002533340"
 
 
 # ============================================================
-# FIZIKSEL BUTONLAR
+# GPIO
 # ============================================================
 
-TAXI_BUTTON_PIN = 17          # Fiziksel Pin 11
-CALL_BUTTON_PIN = 27          # Fiziksel Pin 13
-SWITCH_BUTTON_PIN = 22        # Fiziksel Pin 15
-RESIDENCE_BUTTON_PIN = 16     # Fiziksel Pin 36
+# Fiziksel butonlar
+TAXI_BUTTON_PIN = 17
+CALL_BUTTON_PIN = 27
+SWITCH_BUTTON_PIN = 22
+RESIDENCE_BUTTON_PIN = 16
 
-POWER_BUTTON_PIN = 12         # Fiziksel Pin 32
+# Sistem ON/OFF
+POWER_BUTTON_PIN = 12
 
 
-# ============================================================
-# TRAFIK LAMBASI
-# ============================================================
-
+# Trafik lambasi
 BOOT_GREEN_PIN = 5
 BOOT_YELLOW_PIN = 6
 BOOT_RED_PIN = 13
 
 
-# ============================================================
-# AYRI DURUM LEDLERI
-# ============================================================
-
+# Ayri durum LED'leri
 ACTION_GREEN_PIN = 23
 ACTION_YELLOW_PIN = 24
 ACTION_RED_PIN = 25
 
 
-# ============================================================
-# 4x4 KEYPAD
-# ============================================================
-
+# Keypad
 ROWS = [4, 7, 8, 9]
 COLS = [10, 11, 18, 19]
 
@@ -117,22 +109,35 @@ class OLEDDisplay:
         self.clear()
 
 
-    def show(
-        self,
-        line1="",
-        line2="",
-        line3="",
-        line4=""
-    ):
+    def show(self, line1="", line2="", line3="", line4=""):
 
         with self.lock:
 
             with canvas(self.device) as draw:
 
-                draw.text((0, 0), str(line1), fill="white")
-                draw.text((0, 16), str(line2), fill="white")
-                draw.text((0, 32), str(line3), fill="white")
-                draw.text((0, 48), str(line4), fill="white")
+                draw.text(
+                    (0, 0),
+                    str(line1),
+                    fill="white"
+                )
+
+                draw.text(
+                    (0, 16),
+                    str(line2),
+                    fill="white"
+                )
+
+                draw.text(
+                    (0, 32),
+                    str(line3),
+                    fill="white"
+                )
+
+                draw.text(
+                    (0, 48),
+                    str(line4),
+                    fill="white"
+                )
 
 
     def clear(self):
@@ -142,7 +147,7 @@ class OLEDDisplay:
 
 
 # ============================================================
-# LED KONTROL
+# LED SINIFI
 # ============================================================
 
 class StatusLEDs:
@@ -155,7 +160,7 @@ class StatusLEDs:
 
         self.lock = threading.Lock()
 
-        self.current_state = None
+        self.state = None
 
         self.off()
 
@@ -168,14 +173,14 @@ class StatusLEDs:
             self.yellow.off()
             self.red.off()
 
-            self.current_state = "off"
+            self.state = "off"
 
 
     def loading(self):
 
         with self.lock:
 
-            if self.current_state == "loading":
+            if self.state == "loading":
                 return
 
             self.green.off()
@@ -188,173 +193,247 @@ class StatusLEDs:
                 background=True
             )
 
-            self.current_state = "loading"
+            self.state = "loading"
 
 
     def success(self):
 
         with self.lock:
 
-            if self.current_state == "success":
-                return
-
             self.yellow.off()
             self.red.off()
             self.green.on()
 
-            self.current_state = "success"
+            self.state = "success"
 
 
     def fail(self):
 
         with self.lock:
 
-            if self.current_state == "fail":
-                return
-
             self.yellow.off()
             self.green.off()
             self.red.on()
 
-            self.current_state = "fail"
+            self.state = "fail"
 
 
     def close(self):
 
-        with self.lock:
+        self.off()
 
-            self.green.off()
-            self.yellow.off()
-            self.red.off()
-
-            self.green.close()
-            self.yellow.close()
-            self.red.close()
+        self.green.close()
+        self.yellow.close()
+        self.red.close()
 
 
 # ============================================================
-# MAIN
+# QRING SISTEM
 # ============================================================
 
-def main():
+class QringSystem:
 
-    # ========================================================
-    # OLED
-    # ========================================================
+    def __init__(self):
 
-    oled = OLEDDisplay()
+        print("[SISTEM] Donanim hazirlaniyor...")
 
 
-    # ========================================================
-    # LEDLER
-    # ========================================================
+        # ====================================================
+        # OLED
+        # ====================================================
 
-    boot_leds = StatusLEDs(
-        BOOT_GREEN_PIN,
-        BOOT_YELLOW_PIN,
-        BOOT_RED_PIN
-    )
-
-    action_leds = StatusLEDs(
-        ACTION_GREEN_PIN,
-        ACTION_YELLOW_PIN,
-        ACTION_RED_PIN
-    )
+        self.oled = OLEDDisplay()
 
 
-    # ========================================================
-    # KEYPAD
-    # ========================================================
+        # ====================================================
+        # LEDLER
+        # ====================================================
 
-    keypad_rows = [
-        DigitalOutputDevice(
-            pin,
-            initial_value=True
+        self.boot_leds = StatusLEDs(
+            BOOT_GREEN_PIN,
+            BOOT_YELLOW_PIN,
+            BOOT_RED_PIN
         )
-        for pin in ROWS
-    ]
 
-    keypad_cols = [
-        DigitalInputDevice(
-            pin,
-            pull_up=True
+        self.action_leds = StatusLEDs(
+            ACTION_GREEN_PIN,
+            ACTION_YELLOW_PIN,
+            ACTION_RED_PIN
         )
-        for pin in COLS
-    ]
+
+
+        # ====================================================
+        # BUTONLAR
+        # ====================================================
+
+        self.btn_taxi = Button(
+            TAXI_BUTTON_PIN,
+            pull_up=True,
+            bounce_time=0.15
+        )
+
+        self.btn_call = Button(
+            CALL_BUTTON_PIN,
+            pull_up=True,
+            bounce_time=0.15
+        )
+
+        self.btn_switch = Button(
+            SWITCH_BUTTON_PIN,
+            pull_up=True,
+            bounce_time=0.15
+        )
+
+        self.btn_residence = Button(
+            RESIDENCE_BUTTON_PIN,
+            pull_up=True,
+            bounce_time=0.15
+        )
+
+        self.btn_power = Button(
+            POWER_BUTTON_PIN,
+            pull_up=True,
+            bounce_time=0.25
+        )
+
+
+        # ====================================================
+        # KEYPAD
+        # ====================================================
+
+        self.keypad_rows = [
+            DigitalOutputDevice(
+                pin,
+                initial_value=True
+            )
+            for pin in ROWS
+        ]
+
+        self.keypad_cols = [
+            DigitalInputDevice(
+                pin,
+                pull_up=True
+            )
+            for pin in COLS
+        ]
+
+
+        # ====================================================
+        # DURUMLAR
+        # ====================================================
+
+        self.system_active = False
+        self.system_starting = False
+
+        self.residence_mode = False
+
+        self.selected_block = None
+        self.apartments = []
+        self.apartment_input = ""
+
+        self.blocks_cache = []
+
+        self.api = None
+
+        self.signalr = SignalRService()
+
+
+        # ====================================================
+        # LOCK
+        # ====================================================
+
+        self.action_lock = threading.Lock()
+        self.power_lock = threading.Lock()
+
+        self.stop_event = threading.Event()
+
+
+        # ====================================================
+        # SIGNALR CALLBACK
+        # ====================================================
+
+        self.signalr.set_rejection_callback(
+            self.call_rejected
+        )
+
+
+        # ====================================================
+        # BUTON CALLBACKLERI
+        # ====================================================
+
+        self.btn_power.when_pressed = (
+            lambda: self.run_async(
+                self.toggle_power
+            )
+        )
+
+        self.btn_taxi.when_pressed = (
+            lambda: self.run_async(
+                self.taxi_action
+            )
+        )
+
+        self.btn_call.when_pressed = (
+            lambda: self.run_async(
+                self.call_action
+            )
+        )
+
+        self.btn_switch.when_pressed = (
+            lambda: self.run_async(
+                self.switch_action
+            )
+        )
+
+        self.btn_residence.when_pressed = (
+            self.residence_action
+        )
+
+
+        # ====================================================
+        # ILK DURUM
+        # ====================================================
+
+        self.boot_leds.fail()
+        self.action_leds.off()
+
+        self.show_power_off()
+
+        print("[SISTEM] Hazir.")
+        print("[SISTEM] ON/OFF butonuna basin.")
 
 
     # ========================================================
-    # BUTONLAR
+    # THREAD BASLAT
     # ========================================================
 
-    btn_taxi = Button(
-        TAXI_BUTTON_PIN,
-        pull_up=True,
-        bounce_time=0.1
-    )
+    def run_async(self, function):
 
-    btn_call = Button(
-        CALL_BUTTON_PIN,
-        pull_up=True,
-        bounce_time=0.1
-    )
+        thread = threading.Thread(
+            target=function,
+            daemon=True
+        )
 
-    btn_switch = Button(
-        SWITCH_BUTTON_PIN,
-        pull_up=True,
-        bounce_time=0.1
-    )
-
-    btn_residence = Button(
-        RESIDENCE_BUTTON_PIN,
-        pull_up=True,
-        bounce_time=0.1
-    )
-
-    power_button = Button(
-        POWER_BUTTON_PIN,
-        pull_up=True,
-        bounce_time=0.2
-    )
+        thread.start()
 
 
     # ========================================================
-    # SISTEM DURUMU
+    # OLED EKRANLARI
     # ========================================================
 
-    system_active = False
-    system_starting = False
+    def show_power_off(self):
 
-    residence_mode = False
-
-    api = None
-
-    signalr = SignalRService()
-
-    action_lock = threading.Lock()
-    power_lock = threading.Lock()
-
-    stop_event = threading.Event()
+        self.oled.show(
+            "QRING SISTEM",
+            "",
+            "SISTEM KAPALI",
+            "ON TUSUNA BASIN"
+        )
 
 
-    # ========================================================
-    # KEYPAD DURUMU
-    # ========================================================
+    def show_home(self):
 
-    selected_block = None
-    apartment_list = []
-    apartment_input = ""
-
-    blocks_cache = []
-
-
-    # ========================================================
-    # ANA MENU
-    # ========================================================
-
-    def show_home():
-
-        oled.show(
+        self.oled.show(
             "1: TAKSI",
             "2: CAGRI",
             "3: SWITCH",
@@ -362,13 +441,9 @@ def main():
         )
 
 
-    # ========================================================
-    # APARTMAN BLOK SECIM EKRANI
-    # ========================================================
+    def show_blocks(self):
 
-    def show_block_selection():
-
-        oled.show(
+        self.oled.show(
             "APARTMAN CAGRI",
             "BLOK SECIN",
             "",
@@ -377,29 +452,28 @@ def main():
 
 
     # ========================================================
-    # KEYPAD DURUMUNU SIFIRLA
+    # KEYPAD STATE
     # ========================================================
 
-    def reset_keypad_state():
+    def reset_residence(self):
 
-        nonlocal selected_block
-        nonlocal apartment_list
-        nonlocal apartment_input
-
-        selected_block = None
-        apartment_list = []
-        apartment_input = ""
+        self.selected_block = None
+        self.apartments = []
+        self.apartment_input = ""
 
 
     # ========================================================
     # BLOK BUL
     # ========================================================
 
-    def find_block(blocks, letter):
+    def find_block(self, letter):
 
-        target = f"{letter} Blok".casefold()
+        target = (
+            f"{letter} Blok"
+            .casefold()
+        )
 
-        for block in blocks:
+        for block in self.blocks_cache:
 
             name = block.get(
                 "blockName",
@@ -416,12 +490,15 @@ def main():
     # DAIRE BUL
     # ========================================================
 
-    def find_apartment(apartments, entered_number):
+    def find_apartment(self):
 
-        # Önce apartmentNo alanına bak.
-        # Örneğin Yönetici -> apartmentNo = 1
+        entered = self.apartment_input
 
-        for apartment in apartments:
+
+        # Once apartmentNo kontrol et
+        # Yonetici apartmentNo = 1
+
+        for apartment in self.apartments:
 
             apartment_no = apartment.get(
                 "apartmentNo"
@@ -429,15 +506,20 @@ def main():
 
             if apartment_no is not None:
 
-                if str(apartment_no) == entered_number:
+                if str(apartment_no) == entered:
+
                     return apartment
 
 
-        # apartmentNo boşsa "Daire X" adına bak.
+        # Sonra apartmentName kontrol et
 
-        target = f"Daire {entered_number}".casefold()
+        target = (
+            f"Daire {entered}"
+            .casefold()
+        )
 
-        for apartment in apartments:
+
+        for apartment in self.apartments:
 
             name = apartment.get(
                 "apartmentName",
@@ -447,182 +529,77 @@ def main():
             if name == target:
                 return apartment
 
-        return None
-
-
-    # ========================================================
-    # KEYPAD OKUMA
-    # ========================================================
-
-    def read_key():
-
-        for row_index, row in enumerate(keypad_rows):
-
-            row.off()
-
-            time.sleep(0.002)
-
-            for col_index, col in enumerate(keypad_cols):
-
-                if col.is_active:
-
-                    key = KEYS[row_index][col_index]
-
-                    while (
-                        col.is_active
-                        and not stop_event.is_set()
-                    ):
-
-                        time.sleep(0.02)
-
-                    row.on()
-
-                    time.sleep(0.05)
-
-                    return key
-
-            row.on()
 
         return None
 
 
     # ========================================================
-    # CALL REJECTED
+    # SISTEM ON/OFF
     # ========================================================
 
-    def call_rejected():
+    def toggle_power(self):
 
-        if not system_active:
+        if not self.power_lock.acquire(
+            blocking=False
+        ):
+
             return
 
-        print("\n======================================")
-        print("CAGRI REDDEDILDI")
-        print("======================================")
 
-        action_leds.fail()
+        try:
 
-        oled.show(
-            "CAGRI",
-            "",
-            "REDDEDILDI",
-            ""
-        )
+            if (
+                self.system_active
+                or self.system_starting
+            ):
 
+                self.stop_system()
 
-    signalr.set_rejection_callback(
-        call_rejected
-    )
+            else:
+
+                self.start_system()
 
 
-    # ========================================================
-    # SIGNALR MONITOR
-    # ========================================================
+        finally:
 
-    def connection_monitor():
-
-        previous_connected = None
-
-        while not stop_event.is_set():
-
-            if not system_active:
-
-                previous_connected = None
-                time.sleep(0.2)
-                continue
-
-
-            connected = (
-                signalr.connected_event.is_set()
-            )
-
-
-            if connected != previous_connected:
-
-                if connected:
-
-                    boot_leds.success()
-
-                    print(
-                        "[SIGNALR] Baglanti aktif."
-                    )
-
-                    # Bağlantı koptu ve tekrar geldiyse
-                    if previous_connected is False:
-
-                        oled.show(
-                            "QRING SISTEM",
-                            "",
-                            "BAGLANTI",
-                            "GERI GELDI"
-                        )
-
-                        time.sleep(1)
-
-                        if residence_mode:
-                            show_block_selection()
-                        else:
-                            show_home()
-
-
-                else:
-
-                    boot_leds.loading()
-
-                    print(
-                        "[SIGNALR] Baglanti koptu."
-                    )
-
-                    oled.show(
-                        "QRING SISTEM",
-                        "",
-                        "BAGLANTI KOPTU",
-                        "BEKLEYIN..."
-                    )
-
-
-                previous_connected = connected
-
-
-            time.sleep(0.2)
+            self.power_lock.release()
 
 
     # ========================================================
     # SISTEM BASLAT
     # ========================================================
 
-    def start_system():
+    def start_system(self):
 
-        nonlocal system_active
-        nonlocal system_starting
-        nonlocal api
-        nonlocal residence_mode
-        nonlocal blocks_cache
-
-
-        if system_active:
+        if self.system_active:
             return
 
-        if system_starting:
+        if self.system_starting:
             return
 
 
-        system_starting = True
+        self.system_starting = True
+        self.residence_mode = False
 
-        residence_mode = False
-
-        reset_keypad_state()
+        self.reset_residence()
 
 
-        print("\n======================================")
+        print()
+        print("==============================")
         print("SISTEM BASLATILIYOR")
-        print("======================================")
+        print("==============================")
 
 
-        boot_leds.loading()
-        action_leds.off()
+        # ---------------------------------------------
+        # SARI
+        # ---------------------------------------------
+
+        self.boot_leds.loading()
+
+        self.action_leds.off()
 
 
-        oled.show(
+        self.oled.show(
             "QRING SISTEM",
             "",
             "LOGIN",
@@ -632,25 +609,25 @@ def main():
 
         try:
 
-            # -----------------------------------------------
-            # SESSION
-            # -----------------------------------------------
+            # -----------------------------------------
+            # API
+            # -----------------------------------------
 
             session = create_api_session()
 
-            api = APIService(
+            self.api = APIService(
                 session=session
             )
 
 
-            # -----------------------------------------------
+            # -----------------------------------------
             # LOGIN
-            # -----------------------------------------------
+            # -----------------------------------------
 
-            print("[SISTEM] Login yapiliyor...")
+            print("[SISTEM] Login...")
 
 
-            token = api.login(
+            token = self.api.login(
                 USERNAME,
                 PASSWORD
             )
@@ -659,14 +636,14 @@ def main():
             if not token:
 
                 raise RuntimeError(
-                    "Token alinamadi."
+                    "Token alinamadi"
                 )
 
 
             print("[SISTEM] Token alindi.")
 
 
-            oled.show(
+            self.oled.show(
                 "QRING SISTEM",
                 "",
                 "TOKEN ALINDI",
@@ -674,117 +651,135 @@ def main():
             )
 
 
-            # -----------------------------------------------
+            # -----------------------------------------
             # SIGNALR
-            # -----------------------------------------------
+            # -----------------------------------------
 
-            connected = signalr.start_connection(
-                token=token,
-                timeout=12
+            connected = (
+                self.signalr.start_connection(
+                    token=token,
+                    timeout=12
+                )
             )
 
 
             if not connected:
 
-                raise ConnectionError(
-                    "SignalR baglantisi kurulamadi."
+                raise RuntimeError(
+                    "SignalR baglanamadi"
                 )
 
 
-            # -----------------------------------------------
-            # AKTIF
-            # -----------------------------------------------
+            # -----------------------------------------
+            # SISTEM HAZIR
+            # -----------------------------------------
 
-            system_active = True
-            system_starting = False
+            self.system_active = True
+            self.system_starting = False
 
-            residence_mode = False
+            self.residence_mode = False
 
-            blocks_cache = []
-
-
-            boot_leds.success()
+            self.blocks_cache = []
 
 
-            print("[SISTEM] Sistem AKTIF.")
-            print("[LED] Trafik lambasi -> YESIL")
+            self.boot_leds.success()
 
 
-            show_home()
+            print(
+                "[SISTEM] BAGLANTI BASARILI"
+            )
+
+            print(
+                "[LED] Trafik -> YESIL"
+            )
+
+
+            self.show_home()
 
 
         except Exception as e:
-
-            system_active = False
-            system_starting = False
-            residence_mode = False
-
 
             print(
                 "[SISTEM HATA]",
                 e
             )
 
+            traceback.print_exc()
 
-            boot_leds.fail()
+
+            self.system_active = False
+            self.system_starting = False
+            self.residence_mode = False
 
 
-            oled.show(
+            self.boot_leds.fail()
+
+
+            self.oled.show(
                 "QRING SISTEM",
                 "",
-                "HATA",
-                "SISTEM KAPALI"
+                "BAGLANTI HATASI",
+                "TEKRAR DENE"
             )
 
 
-            signalr.stop_connection()
+            try:
+                self.signalr.stop_connection()
+            except Exception:
+                pass
 
 
     # ========================================================
     # SISTEM KAPAT
     # ========================================================
 
-    def stop_system():
+    def stop_system(self):
 
-        nonlocal system_active
-        nonlocal system_starting
-        nonlocal residence_mode
-        nonlocal blocks_cache
+        print("[SISTEM] Kapatiliyor...")
 
 
-        system_active = False
-        system_starting = False
-        residence_mode = False
+        self.system_active = False
+        self.system_starting = False
+        self.residence_mode = False
 
-        blocks_cache = []
+        self.reset_residence()
 
-        reset_keypad_state()
-
-
-        signalr.stop_connection()
-
-        action_leds.off()
-        boot_leds.fail()
+        self.blocks_cache = []
 
 
-        oled.show(
-            "QRING SISTEM",
-            "",
-            "SISTEM KAPALI",
-            "ON TUSUNA BASIN"
+        try:
+
+            self.signalr.stop_connection()
+
+        except Exception:
+
+            pass
+
+
+        self.action_leds.off()
+
+        self.boot_leds.fail()
+
+
+        self.show_power_off()
+
+
+        print(
+            "[SISTEM] Sistem kapali."
         )
 
 
-        print("[SISTEM] Sistem kapali.")
-
-
     # ========================================================
-    # POWER
+    # TAKSI
     # ========================================================
 
-    def toggle_power():
+    def taxi_action(self):
 
-        if not power_lock.acquire(
+        if not self.system_active:
+            return
+
+
+        if not self.action_lock.acquire(
             blocking=False
         ):
 
@@ -793,43 +788,10 @@ def main():
 
         try:
 
-            if system_active or system_starting:
-
-                stop_system()
-
-            else:
-
-                start_system()
+            self.action_leds.loading()
 
 
-        finally:
-
-            power_lock.release()
-
-
-    # ========================================================
-    # BUTON 1 -> TAKSI
-    # ========================================================
-
-    def taxi_action():
-
-        if not system_active:
-            return
-
-
-        if not action_lock.acquire(
-            blocking=False
-        ):
-
-            return
-
-
-        try:
-
-            action_leds.loading()
-
-
-            oled.show(
+            self.oled.show(
                 "TAKSI",
                 "",
                 "CAGIRILIYOR...",
@@ -837,7 +799,7 @@ def main():
             )
 
 
-            result = api.call_taxi(
+            result = self.api.call_taxi(
                 device_unique_id=TAXI_DEVICE_ID
             )
 
@@ -848,15 +810,22 @@ def main():
             )
 
 
-            action_leds.success()
+            self.action_leds.success()
 
 
-            oled.show(
+            self.oled.show(
                 "TAKSI",
                 "",
                 "BASARILI",
                 ""
             )
+
+
+            time.sleep(2)
+
+
+            if self.system_active:
+                self.show_home()
 
 
         except Exception as e:
@@ -867,10 +836,10 @@ def main():
             )
 
 
-            action_leds.fail()
+            self.action_leds.fail()
 
 
-            oled.show(
+            self.oled.show(
                 "TAKSI",
                 "",
                 "HATA",
@@ -880,20 +849,20 @@ def main():
 
         finally:
 
-            action_lock.release()
+            self.action_lock.release()
 
 
     # ========================================================
-    # BUTON 2 -> CAGRI
+    # NORMAL CAGRI
     # ========================================================
 
-    def call_action():
+    def call_action(self):
 
-        if not system_active:
+        if not self.system_active:
             return
 
 
-        if not action_lock.acquire(
+        if not self.action_lock.acquire(
             blocking=False
         ):
 
@@ -902,10 +871,10 @@ def main():
 
         try:
 
-            action_leds.loading()
+            self.action_leds.loading()
 
 
-            oled.show(
+            self.oled.show(
                 "CAGRI",
                 "",
                 "BASLATILIYOR...",
@@ -913,7 +882,7 @@ def main():
             )
 
 
-            result = api.start_call(
+            result = self.api.start_call(
                 device_unique_id=CALL_DEVICE_ID
             )
 
@@ -924,15 +893,22 @@ def main():
             )
 
 
-            action_leds.success()
+            self.action_leds.success()
 
 
-            oled.show(
+            self.oled.show(
                 "CAGRI",
                 "",
                 "GONDERILDI",
                 ""
             )
+
+
+            time.sleep(2)
+
+
+            if self.system_active:
+                self.show_home()
 
 
         except Exception as e:
@@ -943,10 +919,10 @@ def main():
             )
 
 
-            action_leds.fail()
+            self.action_leds.fail()
 
 
-            oled.show(
+            self.oled.show(
                 "CAGRI",
                 "",
                 "HATA",
@@ -956,20 +932,20 @@ def main():
 
         finally:
 
-            action_lock.release()
+            self.action_lock.release()
 
 
     # ========================================================
-    # BUTON 3 -> SWITCH
+    # SWITCH
     # ========================================================
 
-    def switch_action():
+    def switch_action(self):
 
-        if not system_active:
+        if not self.system_active:
             return
 
 
-        if not action_lock.acquire(
+        if not self.action_lock.acquire(
             blocking=False
         ):
 
@@ -978,10 +954,10 @@ def main():
 
         try:
 
-            action_leds.loading()
+            self.action_leds.loading()
 
 
-            oled.show(
+            self.oled.show(
                 "SWITCH",
                 "",
                 "ISTEK",
@@ -989,9 +965,11 @@ def main():
             )
 
 
-            result = api.set_switch_status(
-                switch_id=SWITCH_ID,
-                device_unique_id=CALL_DEVICE_ID
+            result = (
+                self.api.set_switch_status(
+                    switch_id=SWITCH_ID,
+                    device_unique_id=CALL_DEVICE_ID
+                )
             )
 
 
@@ -1001,15 +979,22 @@ def main():
             )
 
 
-            action_leds.success()
+            self.action_leds.success()
 
 
-            oled.show(
+            self.oled.show(
                 "SWITCH",
                 "",
                 "BASARILI",
                 ""
             )
+
+
+            time.sleep(2)
+
+
+            if self.system_active:
+                self.show_home()
 
 
         except Exception as e:
@@ -1020,10 +1005,10 @@ def main():
             )
 
 
-            action_leds.fail()
+            self.action_leds.fail()
 
 
-            oled.show(
+            self.oled.show(
                 "SWITCH",
                 "",
                 "HATA",
@@ -1033,101 +1018,135 @@ def main():
 
         finally:
 
-            action_lock.release()
+            self.action_lock.release()
 
 
     # ========================================================
-    # BUTON 4 -> APARTMAN MODU
+    # APARTMAN BUTONU
     # ========================================================
 
-    def residence_action():
+    def residence_action(self):
 
-        nonlocal residence_mode
-
-
-        if not system_active:
+        if not self.system_active:
             return
 
 
-        # Apartman modu kapalıysa aç
-        if not residence_mode:
+        # Kapaliysa ac
+        if not self.residence_mode:
 
-            residence_mode = True
+            self.residence_mode = True
 
-            reset_keypad_state()
+            self.reset_residence()
+
+            self.show_blocks()
 
 
             print(
-                "[APARTMAN] Apartman cagri modu acildi."
+                "[APARTMAN] Mod acildi."
             )
 
 
-            show_block_selection()
-
-
-        # Zaten açıksa butona tekrar basınca ana menüye dön
+        # Aciksa kapat
         else:
 
-            residence_mode = False
+            self.residence_mode = False
 
-            reset_keypad_state()
+            self.reset_residence()
+
+            self.show_home()
 
 
             print(
-                "[APARTMAN] Apartman cagri modu kapatildi."
+                "[APARTMAN] Mod kapandi."
             )
 
 
-            show_home()
+    # ========================================================
+    # KEYPAD OKU
+    # ========================================================
+
+    def read_key(self):
+
+        for row_index, row in enumerate(
+            self.keypad_rows
+        ):
+
+            row.off()
+
+            time.sleep(0.002)
+
+
+            for col_index, col in enumerate(
+                self.keypad_cols
+            ):
+
+                if col.is_active:
+
+                    key = KEYS[
+                        row_index
+                    ][
+                        col_index
+                    ]
+
+
+                    while (
+                        col.is_active
+                        and not self.stop_event.is_set()
+                    ):
+
+                        time.sleep(0.02)
+
+
+                    row.on()
+
+                    time.sleep(0.05)
+
+                    return key
+
+
+            row.on()
+
+
+        return None
 
 
     # ========================================================
-    # KEYPAD TUS ISLEME
+    # KEYPAD TUS ISLE
     # ========================================================
 
-    def process_key(key):
+    def process_key(self, key):
 
-        nonlocal selected_block
-        nonlocal apartment_list
-        nonlocal apartment_input
-        nonlocal blocks_cache
-        nonlocal residence_mode
-
-
-        if not system_active:
+        if not self.system_active:
             return
 
-
-        # Apartman modu açık değilse keypad hiçbir şey yapmasın.
-        if not residence_mode:
+        if not self.residence_mode:
             return
 
 
         print(
-            "[KEYPAD] Tus:",
+            "[KEYPAD]",
             key
         )
 
 
         # ====================================================
-        # HENUZ BLOK SECILMEDI
+        # BLOK SECILMEDI
         # ====================================================
 
-        if selected_block is None:
+        if self.selected_block is None:
 
-            # * -> Apartman modundan çık
+            # * -> Ana menu
             if key == "*":
 
-                residence_mode = False
+                self.residence_mode = False
 
-                reset_keypad_state()
+                self.reset_residence()
 
-                show_home()
+                self.show_home()
 
                 return
 
 
-            # Sadece A/B/C/D kabul et
             if key not in [
                 "A",
                 "B",
@@ -1135,12 +1154,10 @@ def main():
                 "D"
             ]:
 
-                show_block_selection()
-
                 return
 
 
-            if not action_lock.acquire(
+            if not self.action_lock.acquire(
                 blocking=False
             ):
 
@@ -1149,7 +1166,7 @@ def main():
 
             try:
 
-                oled.show(
+                self.oled.show(
                     "APARTMAN",
                     "",
                     "BLOK",
@@ -1157,22 +1174,25 @@ def main():
                 )
 
 
-                if not blocks_cache:
+                # Bloklari API'den al
 
-                    blocks_cache = api.get_block_list(
-                        RESIDENCE_DEVICE_ID
+                if not self.blocks_cache:
+
+                    self.blocks_cache = (
+                        self.api.get_block_list(
+                            RESIDENCE_DEVICE_ID
+                        )
                     )
 
 
-                block = find_block(
-                    blocks_cache,
+                block = self.find_block(
                     key
                 )
 
 
                 if block is None:
 
-                    oled.show(
+                    self.oled.show(
                         "HATA",
                         "",
                         "BLOK YOK",
@@ -1182,24 +1202,24 @@ def main():
                     return
 
 
-                apartments = api.get_apartment_list(
-                    block["id"]
+                # Daireleri al
+
+                apartments = (
+                    self.api.get_apartment_list(
+                        block["id"]
+                    )
                 )
 
 
-                selected_block = block
-                apartment_list = apartments
-                apartment_input = ""
+                self.selected_block = block
+                self.apartments = apartments
+                self.apartment_input = ""
 
 
-                print(
-                    "[KEYPAD] Blok:",
-                    block["blockName"]
-                )
-
-
-                oled.show(
-                    block["blockName"].upper(),
+                self.oled.show(
+                    block[
+                        "blockName"
+                    ].upper(),
                     "",
                     "DAIRE NO:",
                     "_"
@@ -1214,10 +1234,10 @@ def main():
                 )
 
 
-                blocks_cache = []
+                self.blocks_cache = []
 
 
-                oled.show(
+                self.oled.show(
                     "HATA",
                     "",
                     "BLOK LISTESI",
@@ -1227,7 +1247,7 @@ def main():
 
             finally:
 
-                action_lock.release()
+                self.action_lock.release()
 
 
             return
@@ -1239,14 +1259,14 @@ def main():
 
         if key == "*":
 
-            # Daire numarası yazılmışsa sadece numarayı sil
-            if apartment_input:
+            # Numara varsa sil
+            if self.apartment_input:
 
-                apartment_input = ""
+                self.apartment_input = ""
 
 
-                oled.show(
-                    selected_block[
+                self.oled.show(
+                    self.selected_block[
                         "blockName"
                     ].upper(),
                     "",
@@ -1255,14 +1275,14 @@ def main():
                 )
 
 
-            # Numara yoksa blok seçim ekranına dön
+            # Numara yoksa blok secimine don
             else:
 
-                selected_block = None
-                apartment_list = []
-                apartment_input = ""
+                self.selected_block = None
+                self.apartments = []
+                self.apartment_input = ""
 
-                show_block_selection()
+                self.show_blocks()
 
 
             return
@@ -1274,18 +1294,20 @@ def main():
 
         if key.isdigit():
 
-            if len(apartment_input) < 3:
+            if len(
+                self.apartment_input
+            ) < 3:
 
-                apartment_input += key
+                self.apartment_input += key
 
 
-            oled.show(
-                selected_block[
+            self.oled.show(
+                self.selected_block[
                     "blockName"
                 ].upper(),
                 "",
                 "DAIRE NO:",
-                apartment_input
+                self.apartment_input
             )
 
 
@@ -1298,9 +1320,9 @@ def main():
 
         if key == "#":
 
-            if apartment_input == "":
+            if not self.apartment_input:
 
-                oled.show(
+                self.oled.show(
                     "HATA",
                     "",
                     "DAIRE NO GIRIN",
@@ -1310,273 +1332,426 @@ def main():
                 return
 
 
-            apartment = find_apartment(
-                apartment_list,
-                apartment_input
+            apartment = (
+                self.find_apartment()
             )
 
 
             if apartment is None:
 
-                oled.show(
-                    selected_block[
+                self.oled.show(
+                    self.selected_block[
                         "blockName"
                     ].upper(),
                     "",
                     "DAIRE YOK:",
-                    apartment_input
+                    self.apartment_input
                 )
 
-
-                apartment_input = ""
+                self.apartment_input = ""
 
                 return
 
 
-            if not action_lock.acquire(
-                blocking=False
+            self.residence_call(
+                apartment
+            )
+
+
+    # ========================================================
+    # APARTMAN CAGRI
+    # ========================================================
+
+    def residence_call(
+        self,
+        apartment
+    ):
+
+        if not self.action_lock.acquire(
+            blocking=False
+        ):
+
+            return
+
+
+        try:
+
+            block_id = (
+                self.selected_block["id"]
+            )
+
+            apartment_id = (
+                apartment["id"]
+            )
+
+            apartment_name = apartment.get(
+                "apartmentName",
+                self.apartment_input
+            )
+
+
+            print()
+            print("==============================")
+            print("APARTMAN CAGRI")
+            print(
+                "Blok:",
+                self.selected_block[
+                    "blockName"
+                ]
+            )
+            print(
+                "blockId:",
+                block_id
+            )
+            print(
+                "Daire:",
+                apartment_name
+            )
+            print(
+                "apartmentId:",
+                apartment_id
+            )
+            print("==============================")
+
+
+            self.action_leds.loading()
+
+
+            self.oled.show(
+                self.selected_block[
+                    "blockName"
+                ].upper(),
+                apartment_name.upper(),
+                "",
+                "ARANIYOR..."
+            )
+
+
+            result = self.api.start_call(
+                device_unique_id=(
+                    RESIDENCE_CALL_DEVICE_ID
+                ),
+                guest_name="Keypad",
+                block_id=block_id,
+                apartment_id=apartment_id,
+                apartment_no="undefined"
+            )
+
+
+            print(
+                "[APARTMAN]",
+                result
+            )
+
+
+            self.action_leds.success()
+
+
+            self.oled.show(
+                self.selected_block[
+                    "blockName"
+                ].upper(),
+                apartment_name.upper(),
+                "",
+                "CAGRI GONDERILDI"
+            )
+
+
+            time.sleep(2)
+
+
+            self.residence_mode = False
+
+            self.reset_residence()
+
+            self.show_home()
+
+
+        except Exception as e:
+
+            print(
+                "[APARTMAN HATA]",
+                e
+            )
+
+            traceback.print_exc()
+
+
+            self.action_leds.fail()
+
+
+            self.oled.show(
+                "APARTMAN",
+                "",
+                "CAGRI HATASI",
+                ""
+            )
+
+
+        finally:
+
+            self.action_lock.release()
+
+
+    # ========================================================
+    # CALL REJECTED
+    # ========================================================
+
+    def call_rejected(self):
+
+        if not self.system_active:
+            return
+
+
+        print(
+            "[SIGNALR] CAGRI REDDEDILDI"
+        )
+
+
+        self.action_leds.fail()
+
+
+        self.oled.show(
+            "CAGRI",
+            "",
+            "REDDEDILDI",
+            ""
+        )
+
+
+    # ========================================================
+    # SIGNALR MONITOR
+    # ========================================================
+
+    def connection_monitor(self):
+
+        was_connected = None
+
+
+        while not self.stop_event.is_set():
+
+            if not self.system_active:
+
+                was_connected = None
+
+                time.sleep(0.2)
+
+                continue
+
+
+            connected = (
+                self.signalr
+                .connected_event
+                .is_set()
+            )
+
+
+            if connected != was_connected:
+
+                # Baglanti geldi
+                if connected:
+
+                    self.boot_leds.success()
+
+
+                    if was_connected is False:
+
+                        print(
+                            "[SIGNALR] Yeniden baglandi."
+                        )
+
+
+                        if self.residence_mode:
+
+                            self.show_blocks()
+
+                        else:
+
+                            self.show_home()
+
+
+                # Baglanti koptu
+                else:
+
+                    self.boot_leds.loading()
+
+
+                    print(
+                        "[SIGNALR] Baglanti koptu."
+                    )
+
+
+                    self.oled.show(
+                        "QRING SISTEM",
+                        "",
+                        "BAGLANTI KOPTU",
+                        "BEKLEYIN..."
+                    )
+
+
+                was_connected = connected
+
+
+            time.sleep(0.2)
+
+
+    # ========================================================
+    # KEYPAD LOOP
+    # ========================================================
+
+    def keypad_loop(self):
+
+        while not self.stop_event.is_set():
+
+            if (
+                not self.system_active
+                or not self.residence_mode
             ):
 
-                return
+                time.sleep(0.1)
+
+                continue
 
 
             try:
 
-                block_id = selected_block["id"]
-                apartment_id = apartment["id"]
-
-                apartment_name = apartment.get(
-                    "apartmentName",
-                    apartment_input
-                )
+                key = self.read_key()
 
 
-                print()
-                print("======================================")
-                print("APARTMAN CAGRI")
-                print(
-                    "Blok:",
-                    selected_block["blockName"]
-                )
-                print(
-                    "blockId:",
-                    block_id
-                )
-                print(
-                    "Daire:",
-                    apartment_name
-                )
-                print(
-                    "apartmentId:",
-                    apartment_id
-                )
-                print("======================================")
+                if key is not None:
 
-
-                action_leds.loading()
-
-
-                oled.show(
-                    selected_block[
-                        "blockName"
-                    ].upper(),
-                    apartment_name.upper(),
-                    "",
-                    "ARANIYOR..."
-                )
-
-
-                result = api.start_call(
-                    device_unique_id=RESIDENCE_CALL_DEVICE_ID,
-                    guest_name="Keypad",
-                    block_id=block_id,
-                    apartment_id=apartment_id,
-                    apartment_no="undefined"
-                )
-
-
-                print(
-                    "[APARTMAN CALL]",
-                    result
-                )
-
-
-                action_leds.success()
-
-
-                oled.show(
-                    selected_block[
-                        "blockName"
-                    ].upper(),
-                    apartment_name.upper(),
-                    "",
-                    "CAGRI GONDERILDI"
-                )
-
-
-                # Çağrıdan sonra apartman modunu kapat.
-                residence_mode = False
-
-                reset_keypad_state()
+                    self.process_key(
+                        key
+                    )
 
 
             except Exception as e:
 
                 print(
-                    "[APARTMAN CALL HATA]",
+                    "[KEYPAD HATA]",
                     e
                 )
 
-
-                action_leds.fail()
-
-
-                oled.show(
-                    "CAGRI",
-                    "",
-                    "HATA",
-                    "BASARISIZ"
-                )
+                traceback.print_exc()
 
 
-                residence_mode = False
-
-                reset_keypad_state()
-
-
-            finally:
-
-                action_lock.release()
-
-
-    # ========================================================
-    # KEYPAD THREAD
-    # ========================================================
-
-    def keypad_loop():
-
-        while not stop_event.is_set():
-
-            # Sistem veya apartman modu kapalıysa keypad taramasını
-            # yavaşlat.
-            if not system_active or not residence_mode:
-
-                time.sleep(0.1)
-                continue
-
-
-            key = read_key()
-
-
-            if key is not None:
-
-                try:
-
-                    process_key(key)
-
-                except Exception as e:
-
-                    print(
-                        "[KEYPAD HATA]",
-                        e
-                    )
-
-
-            else:
-
-                time.sleep(0.01)
-
-
-    # ========================================================
-    # THREADLER
-    # ========================================================
-
-    monitor_thread = threading.Thread(
-        target=connection_monitor,
-        daemon=True
-    )
-
-    monitor_thread.start()
-
-
-    keypad_thread = threading.Thread(
-        target=keypad_loop,
-        daemon=True
-    )
-
-    keypad_thread.start()
-
-
-    # ========================================================
-    # BUTON EVENTLERI
-    # ========================================================
-
-    btn_taxi.when_pressed = taxi_action
-    btn_call.when_pressed = call_action
-    btn_switch.when_pressed = switch_action
-
-    # Yeni 4. buton
-    btn_residence.when_pressed = residence_action
-
-    power_button.when_pressed = toggle_power
+            time.sleep(0.01)
 
 
     # ========================================================
     # PROGRAM
     # ========================================================
 
+    def run(self):
+
+        # Arka plan threadleri
+
+        threading.Thread(
+            target=self.connection_monitor,
+            daemon=True
+        ).start()
+
+
+        threading.Thread(
+            target=self.keypad_loop,
+            daemon=True
+        ).start()
+
+
+        print()
+        print("==============================")
+        print("QRING SISTEM CALISIYOR")
+        print("==============================")
+
+
+        # Burasi programi surekli acik tutar
+
+        while not self.stop_event.is_set():
+
+            time.sleep(0.5)
+
+
+    # ========================================================
+    # TEMIZLIK
+    # ========================================================
+
+    def shutdown(self):
+
+        print(
+            "[SISTEM] GPIO temizleniyor..."
+        )
+
+
+        self.stop_event.set()
+
+        self.system_active = False
+
+
+        try:
+            self.signalr.stop_connection()
+        except Exception:
+            pass
+
+
+        self.boot_leds.close()
+        self.action_leds.close()
+
+
+        self.btn_taxi.close()
+        self.btn_call.close()
+        self.btn_switch.close()
+        self.btn_residence.close()
+        self.btn_power.close()
+
+
+        for row in self.keypad_rows:
+
+            row.close()
+
+
+        for col in self.keypad_cols:
+
+            col.close()
+
+
+        self.oled.clear()
+
+
+# ============================================================
+# PROGRAM BASLANGICI
+# ============================================================
+
+if __name__ == "__main__":
+
+    system = None
+
     try:
 
-        pause()
+        system = QringSystem()
+
+        system.run()
 
 
     except KeyboardInterrupt:
 
         print(
-            "\n[SISTEM] Program kapatiliyor."
+            "\nCTRL+C -> Program durduruldu."
         )
+
+
+    except Exception as e:
+
+        print()
+        print("================================")
+        print("BEKLENMEYEN PROGRAM HATASI")
+        print("================================")
+        print(e)
+
+        traceback.print_exc()
 
 
     finally:
 
-        stop_event.set()
+        if system is not None:
 
-        signalr.stop_connection()
-
-        boot_leds.close()
-        action_leds.close()
-
-        btn_taxi.close()
-        btn_call.close()
-        btn_switch.close()
-        btn_residence.close()
-        power_button.close()
-
-
-        for row in keypad_rows:
-            row.close()
-
-        for col in keypad_cols:
-            col.close()
-
-
-        oled.show(
-            "QRING SISTEM",
-            "",
-            "PROGRAM",
-            "KAPATILDI"
-        )
-
-        time.sleep(1)
-
-        oled.clear()
-
-        sys.exit(0)
-
-
-# ============================================================
-# BASLANGIC
-# ============================================================
-
-if __name__ == "__main__":
-    main()
+            system.shutdown()
