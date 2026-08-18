@@ -73,7 +73,10 @@ ACTION_YELLOW_PIN = 24
 ACTION_RED_PIN = 25
 
 
-# Keypad
+# ============================================================
+# KEYPAD
+# ============================================================
+
 ROWS = [4, 7, 8, 9]
 COLS = [10, 11, 18, 19]
 
@@ -83,6 +86,36 @@ KEYS = [
     ["7", "8", "9", "C"],
     ["*", "0", "#", "D"]
 ]
+
+
+# ============================================================
+# OLED ICIN TURKCE KARAKTER DUZELTME
+# ============================================================
+
+def oled_safe(text):
+
+    text = str(text)
+
+    replacements = {
+        "ç": "c",
+        "Ç": "C",
+        "ğ": "g",
+        "Ğ": "G",
+        "ı": "i",
+        "İ": "I",
+        "ö": "o",
+        "Ö": "O",
+        "ş": "s",
+        "Ş": "S",
+        "ü": "u",
+        "Ü": "U"
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    # OLED satirina sigmasi icin
+    return text[:21]
 
 
 # ============================================================
@@ -109,7 +142,13 @@ class OLEDDisplay:
         self.clear()
 
 
-    def show(self, line1="", line2="", line3="", line4=""):
+    def show(
+        self,
+        line1="",
+        line2="",
+        line3="",
+        line4=""
+    ):
 
         with self.lock:
 
@@ -117,25 +156,25 @@ class OLEDDisplay:
 
                 draw.text(
                     (0, 0),
-                    str(line1),
+                    oled_safe(line1),
                     fill="white"
                 )
 
                 draw.text(
                     (0, 16),
-                    str(line2),
+                    oled_safe(line2),
                     fill="white"
                 )
 
                 draw.text(
                     (0, 32),
-                    str(line3),
+                    oled_safe(line3),
                     fill="white"
                 )
 
                 draw.text(
                     (0, 48),
-                    str(line4),
+                    oled_safe(line4),
                     fill="white"
                 )
 
@@ -152,7 +191,12 @@ class OLEDDisplay:
 
 class StatusLEDs:
 
-    def __init__(self, green_pin, yellow_pin, red_pin):
+    def __init__(
+        self,
+        green_pin,
+        yellow_pin,
+        red_pin
+    ):
 
         self.green = LED(green_pin)
         self.yellow = LED(yellow_pin)
@@ -263,7 +307,7 @@ class QringSystem:
 
 
         # ====================================================
-        # BUTONLAR
+        # FIZIKSEL BUTONLAR
         # ====================================================
 
         self.btn_taxi = Button(
@@ -319,7 +363,7 @@ class QringSystem:
 
 
         # ====================================================
-        # DURUMLAR
+        # SISTEM DURUMU
         # ====================================================
 
         self.system_active = False
@@ -327,19 +371,36 @@ class QringSystem:
 
         self.residence_mode = False
 
+        # block / apartment / users
+        self.residence_stage = "block"
+
         self.selected_block = None
+        self.selected_apartment = None
+
         self.apartments = []
         self.apartment_input = ""
 
+        self.apartment_users = []
+        self.user_page = 0
+
         self.blocks_cache = []
+
+
+        # ====================================================
+        # API / SIGNALR
+        # ====================================================
 
         self.api = None
 
         self.signalr = SignalRService()
 
+        self.signalr.set_rejection_callback(
+            self.call_rejected
+        )
+
 
         # ====================================================
-        # LOCK
+        # LOCK / EVENT
         # ====================================================
 
         self.action_lock = threading.Lock()
@@ -349,16 +410,7 @@ class QringSystem:
 
 
         # ====================================================
-        # SIGNALR CALLBACK
-        # ====================================================
-
-        self.signalr.set_rejection_callback(
-            self.call_rejected
-        )
-
-
-        # ====================================================
-        # BUTON CALLBACKLERI
+        # BUTON EVENTLERI
         # ====================================================
 
         self.btn_power.when_pressed = (
@@ -404,17 +456,15 @@ class QringSystem:
 
 
     # ========================================================
-    # THREAD BASLAT
+    # THREAD
     # ========================================================
 
     def run_async(self, function):
 
-        thread = threading.Thread(
+        threading.Thread(
             target=function,
             daemon=True
-        )
-
-        thread.start()
+        ).start()
 
 
     # ========================================================
@@ -451,15 +501,143 @@ class QringSystem:
         )
 
 
+    def show_apartment_input(self):
+
+        if self.selected_block is None:
+            return
+
+        shown_number = (
+            self.apartment_input
+            if self.apartment_input
+            else "_"
+        )
+
+        self.oled.show(
+            self.selected_block[
+                "blockName"
+            ].upper(),
+            "",
+            "DAIRE NO:",
+            shown_number
+        )
+
+
     # ========================================================
-    # KEYPAD STATE
+    # OTURANLARI OLED'DE GOSTER
+    # ========================================================
+
+    def show_users(self):
+
+        if self.selected_apartment is None:
+            return
+
+
+        apartment_name = self.selected_apartment.get(
+            "apartmentName",
+            ""
+        )
+
+        block_name = self.selected_block.get(
+            "blockName",
+            ""
+        )
+
+
+        # ----------------------------------------------------
+        # Hic kullanici yok
+        # ----------------------------------------------------
+
+        if not self.apartment_users:
+
+            self.oled.show(
+                f"{block_name} {apartment_name}",
+                "KAYITLI KISI YOK",
+                "",
+                "#ARA   *=GERI"
+            )
+
+            return
+
+
+        # ----------------------------------------------------
+        # Her sayfada 2 kisi
+        # ----------------------------------------------------
+
+        page_size = 2
+
+        total_pages = (
+            len(self.apartment_users)
+            + page_size
+            - 1
+        ) // page_size
+
+
+        if self.user_page < 0:
+            self.user_page = total_pages - 1
+
+        if self.user_page >= total_pages:
+            self.user_page = 0
+
+
+        start = self.user_page * page_size
+
+        page_users = self.apartment_users[
+            start:start + page_size
+        ]
+
+
+        name1 = ""
+
+        name2 = ""
+
+
+        if len(page_users) >= 1:
+
+            name1 = page_users[0].get(
+                "nameSurname",
+                "Isimsiz"
+            )
+
+
+        if len(page_users) >= 2:
+
+            name2 = page_users[1].get(
+                "nameSurname",
+                "Isimsiz"
+            )
+
+
+        header = (
+            f"{block_name} "
+            f"{apartment_name} "
+            f"{self.user_page + 1}/{total_pages}"
+        )
+
+
+        self.oled.show(
+            header,
+            name1,
+            name2,
+            "2> 8< #ARA *=GERI"
+        )
+
+
+    # ========================================================
+    # APARTMAN STATE SIFIRLA
     # ========================================================
 
     def reset_residence(self):
 
+        self.residence_stage = "block"
+
         self.selected_block = None
+        self.selected_apartment = None
+
         self.apartments = []
         self.apartment_input = ""
+
+        self.apartment_users = []
+        self.user_page = 0
 
 
     # ========================================================
@@ -473,6 +651,7 @@ class QringSystem:
             .casefold()
         )
 
+
         for block in self.blocks_cache:
 
             name = block.get(
@@ -480,8 +659,10 @@ class QringSystem:
                 ""
             ).casefold()
 
+
             if name == target:
                 return block
+
 
         return None
 
@@ -495,14 +676,13 @@ class QringSystem:
         entered = self.apartment_input
 
 
-        # Once apartmentNo kontrol et
-        # Yonetici apartmentNo = 1
-
+        # Önce apartmentNo
         for apartment in self.apartments:
 
             apartment_no = apartment.get(
                 "apartmentNo"
             )
+
 
             if apartment_no is not None:
 
@@ -511,8 +691,7 @@ class QringSystem:
                     return apartment
 
 
-        # Sonra apartmentName kontrol et
-
+        # Sonra Daire X
         target = (
             f"Daire {entered}"
             .casefold()
@@ -526,6 +705,7 @@ class QringSystem:
                 ""
             ).casefold()
 
+
             if name == target:
                 return apartment
 
@@ -534,7 +714,7 @@ class QringSystem:
 
 
     # ========================================================
-    # SISTEM ON/OFF
+    # POWER TOGGLE
     # ========================================================
 
     def toggle_power(self):
@@ -579,6 +759,7 @@ class QringSystem:
 
 
         self.system_starting = True
+
         self.residence_mode = False
 
         self.reset_residence()
@@ -590,12 +771,7 @@ class QringSystem:
         print("==============================")
 
 
-        # ---------------------------------------------
-        # SARI
-        # ---------------------------------------------
-
         self.boot_leds.loading()
-
         self.action_leds.off()
 
 
@@ -609,10 +785,7 @@ class QringSystem:
 
         try:
 
-            # -----------------------------------------
-            # API
-            # -----------------------------------------
-
+            # API session
             session = create_api_session()
 
             self.api = APIService(
@@ -620,10 +793,7 @@ class QringSystem:
             )
 
 
-            # -----------------------------------------
             # LOGIN
-            # -----------------------------------------
-
             print("[SISTEM] Login...")
 
 
@@ -651,10 +821,7 @@ class QringSystem:
             )
 
 
-            # -----------------------------------------
             # SIGNALR
-            # -----------------------------------------
-
             connected = (
                 self.signalr.start_connection(
                     token=token,
@@ -670,10 +837,7 @@ class QringSystem:
                 )
 
 
-            # -----------------------------------------
-            # SISTEM HAZIR
-            # -----------------------------------------
-
+            # AKTIF
             self.system_active = True
             self.system_starting = False
 
@@ -724,8 +888,11 @@ class QringSystem:
 
 
             try:
+
                 self.signalr.stop_connection()
+
             except Exception:
+
                 pass
 
 
@@ -740,6 +907,7 @@ class QringSystem:
 
         self.system_active = False
         self.system_starting = False
+
         self.residence_mode = False
 
         self.reset_residence()
@@ -759,7 +927,6 @@ class QringSystem:
         self.action_leds.off()
 
         self.boot_leds.fail()
-
 
         self.show_power_off()
 
@@ -825,6 +992,7 @@ class QringSystem:
 
 
             if self.system_active:
+
                 self.show_home()
 
 
@@ -908,6 +1076,7 @@ class QringSystem:
 
 
             if self.system_active:
+
                 self.show_home()
 
 
@@ -994,6 +1163,7 @@ class QringSystem:
 
 
             if self.system_active:
+
                 self.show_home()
 
 
@@ -1031,7 +1201,6 @@ class QringSystem:
             return
 
 
-        # Kapaliysa ac
         if not self.residence_mode:
 
             self.residence_mode = True
@@ -1046,7 +1215,6 @@ class QringSystem:
             )
 
 
-        # Aciksa kapat
         else:
 
             self.residence_mode = False
@@ -1062,7 +1230,7 @@ class QringSystem:
 
 
     # ========================================================
-    # KEYPAD OKU
+    # KEYPAD OKUMA
     # ========================================================
 
     def read_key(self):
@@ -1111,7 +1279,7 @@ class QringSystem:
 
 
     # ========================================================
-    # KEYPAD TUS ISLE
+    # KEYPAD ISLEMLERI
     # ========================================================
 
     def process_key(self, key):
@@ -1130,10 +1298,10 @@ class QringSystem:
 
 
         # ====================================================
-        # BLOK SECILMEDI
+        # 1) BLOK SECIM ASAMASI
         # ====================================================
 
-        if self.selected_block is None:
+        if self.residence_stage == "block":
 
             # * -> Ana menu
             if key == "*":
@@ -1174,8 +1342,6 @@ class QringSystem:
                 )
 
 
-                # Bloklari API'den al
-
                 if not self.blocks_cache:
 
                     self.blocks_cache = (
@@ -1202,9 +1368,7 @@ class QringSystem:
                     return
 
 
-                # Daireleri al
-
-                apartments = (
+                self.apartments = (
                     self.api.get_apartment_list(
                         block["id"]
                     )
@@ -1212,18 +1376,15 @@ class QringSystem:
 
 
                 self.selected_block = block
-                self.apartments = apartments
+
                 self.apartment_input = ""
 
-
-                self.oled.show(
-                    block[
-                        "blockName"
-                    ].upper(),
-                    "",
-                    "DAIRE NO:",
-                    "_"
+                self.residence_stage = (
+                    "apartment"
                 )
+
+
+                self.show_apartment_input()
 
 
             except Exception as e:
@@ -1254,118 +1415,299 @@ class QringSystem:
 
 
         # ====================================================
-        # * -> GERI
+        # 2) DAIRE NUMARASI ASAMASI
         # ====================================================
 
-        if key == "*":
+        if self.residence_stage == "apartment":
 
-            # Numara varsa sil
-            if self.apartment_input:
+            # -----------------------------------------------
+            # * -> temizle / bloklara don
+            # -----------------------------------------------
 
-                self.apartment_input = ""
+            if key == "*":
 
+                if self.apartment_input:
 
-                self.oled.show(
-                    self.selected_block[
-                        "blockName"
-                    ].upper(),
-                    "",
-                    "DAIRE NO:",
-                    "_"
-                )
+                    self.apartment_input = ""
 
+                    self.show_apartment_input()
 
-            # Numara yoksa blok secimine don
-            else:
+                else:
 
-                self.selected_block = None
-                self.apartments = []
-                self.apartment_input = ""
+                    self.selected_block = None
+                    self.apartments = []
 
-                self.show_blocks()
+                    self.residence_stage = "block"
 
+                    self.show_blocks()
 
-            return
-
-
-        # ====================================================
-        # SAYI
-        # ====================================================
-
-        if key.isdigit():
-
-            if len(
-                self.apartment_input
-            ) < 3:
-
-                self.apartment_input += key
-
-
-            self.oled.show(
-                self.selected_block[
-                    "blockName"
-                ].upper(),
-                "",
-                "DAIRE NO:",
-                self.apartment_input
-            )
-
-
-            return
-
-
-        # ====================================================
-        # # -> ARA
-        # ====================================================
-
-        if key == "#":
-
-            if not self.apartment_input:
-
-                self.oled.show(
-                    "HATA",
-                    "",
-                    "DAIRE NO GIRIN",
-                    ""
-                )
 
                 return
 
 
-            apartment = (
-                self.find_apartment()
-            )
+            # -----------------------------------------------
+            # Rakam
+            # -----------------------------------------------
 
+            if key.isdigit():
 
-            if apartment is None:
-
-                self.oled.show(
-                    self.selected_block[
-                        "blockName"
-                    ].upper(),
-                    "",
-                    "DAIRE YOK:",
+                if len(
                     self.apartment_input
-                )
+                ) < 3:
 
-                self.apartment_input = ""
+                    self.apartment_input += key
+
+
+                self.show_apartment_input()
 
                 return
 
 
-            self.residence_call(
-                apartment
-            )
+            # -----------------------------------------------
+            # # -> daireyi onayla ve oturanlari getir
+            # -----------------------------------------------
+
+            if key == "#":
+
+                if not self.apartment_input:
+
+                    self.oled.show(
+                        "HATA",
+                        "",
+                        "DAIRE NO GIRIN",
+                        ""
+                    )
+
+                    return
+
+
+                apartment = (
+                    self.find_apartment()
+                )
+
+
+                if apartment is None:
+
+                    self.oled.show(
+                        self.selected_block[
+                            "blockName"
+                        ].upper(),
+                        "",
+                        "DAIRE BULUNAMADI",
+                        self.apartment_input
+                    )
+
+
+                    self.apartment_input = ""
+
+                    return
+
+
+                if not self.action_lock.acquire(
+                    blocking=False
+                ):
+
+                    return
+
+
+                try:
+
+                    self.selected_apartment = (
+                        apartment
+                    )
+
+
+                    apartment_id = apartment[
+                        "id"
+                    ]
+
+
+                    print(
+                        "[APARTMAN] apartmentId:",
+                        apartment_id
+                    )
+
+
+                    self.action_leds.loading()
+
+
+                    self.oled.show(
+                        apartment.get(
+                            "apartmentName",
+                            ""
+                        ),
+                        "",
+                        "OTURANLAR",
+                        "YUKLENIYOR..."
+                    )
+
+
+                    # =======================================
+                    # YENI API:
+                    # GetApartmentUsers
+                    # =======================================
+
+                    self.apartment_users = (
+                        self.api.get_apartment_users(
+                            apartment_id
+                        )
+                    )
+
+
+                    self.user_page = 0
+
+                    self.residence_stage = "users"
+
+
+                    print(
+                        "[APARTMAN] Kullanici sayisi:",
+                        len(
+                            self.apartment_users
+                        )
+                    )
+
+
+                    for user in self.apartment_users:
+
+                        print(
+                            " -",
+                            user.get(
+                                "nameSurname",
+                                ""
+                            ),
+                            "| callable:",
+                            user.get(
+                                "isCallable"
+                            )
+                        )
+
+
+                    # Liste okundu, işlem LEDlerini kapat
+                    self.action_leds.off()
+
+
+                    self.show_users()
+
+
+                except Exception as e:
+
+                    print(
+                        "[KULLANICI HATA]",
+                        e
+                    )
+
+                    traceback.print_exc()
+
+
+                    self.action_leds.fail()
+
+
+                    self.oled.show(
+                        "HATA",
+                        "",
+                        "OTURANLAR",
+                        "ALINAMADI"
+                    )
+
+
+                finally:
+
+                    self.action_lock.release()
+
+
+                return
+
+
+        # ====================================================
+        # 3) OTURANLAR EKRANI
+        # ====================================================
+
+        if self.residence_stage == "users":
+
+            # -----------------------------------------------
+            # * -> Daire numarasina geri
+            # -----------------------------------------------
+
+            if key == "*":
+
+                self.selected_apartment = None
+
+                self.apartment_users = []
+
+                self.user_page = 0
+
+                self.apartment_input = ""
+
+                self.residence_stage = (
+                    "apartment"
+                )
+
+
+                self.show_apartment_input()
+
+                return
+
+
+            # -----------------------------------------------
+            # 2 -> sonraki sayfa
+            # -----------------------------------------------
+
+            if key == "2":
+
+                if len(
+                    self.apartment_users
+                ) > 2:
+
+                    self.user_page += 1
+
+                    self.show_users()
+
+
+                return
+
+
+            # -----------------------------------------------
+            # 8 -> onceki sayfa
+            # -----------------------------------------------
+
+            if key == "8":
+
+                if len(
+                    self.apartment_users
+                ) > 2:
+
+                    self.user_page -= 1
+
+                    self.show_users()
+
+
+                return
+
+
+            # -----------------------------------------------
+            # # -> Daireyi ara
+            # -----------------------------------------------
+
+            if key == "#":
+
+                if (
+                    self.selected_apartment
+                    is not None
+                ):
+
+                    self.run_async(
+                        self.residence_call
+                    )
+
+
+                return
 
 
     # ========================================================
     # APARTMAN CAGRI
     # ========================================================
 
-    def residence_call(
-        self,
-        apartment
-    ):
+    def residence_call(self):
 
         if not self.action_lock.acquire(
             blocking=False
@@ -1376,17 +1718,27 @@ class QringSystem:
 
         try:
 
+            if (
+                self.selected_block is None
+                or self.selected_apartment is None
+            ):
+
+                return
+
+
             block_id = (
                 self.selected_block["id"]
             )
 
             apartment_id = (
-                apartment["id"]
+                self.selected_apartment["id"]
             )
 
-            apartment_name = apartment.get(
-                "apartmentName",
-                self.apartment_input
+            apartment_name = (
+                self.selected_apartment.get(
+                    "apartmentName",
+                    ""
+                )
             )
 
 
@@ -1439,7 +1791,7 @@ class QringSystem:
 
 
             print(
-                "[APARTMAN]",
+                "[APARTMAN CAGRI]",
                 result
             )
 
@@ -1470,7 +1822,7 @@ class QringSystem:
         except Exception as e:
 
             print(
-                "[APARTMAN HATA]",
+                "[APARTMAN CAGRI HATA]",
                 e
             )
 
@@ -1548,7 +1900,6 @@ class QringSystem:
 
             if connected != was_connected:
 
-                # Baglanti geldi
                 if connected:
 
                     self.boot_leds.success()
@@ -1563,14 +1914,29 @@ class QringSystem:
 
                         if self.residence_mode:
 
-                            self.show_blocks()
+                            if (
+                                self.residence_stage
+                                == "users"
+                            ):
+
+                                self.show_users()
+
+                            elif (
+                                self.residence_stage
+                                == "apartment"
+                            ):
+
+                                self.show_apartment_input()
+
+                            else:
+
+                                self.show_blocks()
 
                         else:
 
                             self.show_home()
 
 
-                # Baglanti koptu
                 else:
 
                     self.boot_leds.loading()
@@ -1644,8 +2010,6 @@ class QringSystem:
 
     def run(self):
 
-        # Arka plan threadleri
-
         threading.Thread(
             target=self.connection_monitor,
             daemon=True
@@ -1663,8 +2027,6 @@ class QringSystem:
         print("QRING SISTEM CALISIYOR")
         print("==============================")
 
-
-        # Burasi programi surekli acik tutar
 
         while not self.stop_event.is_set():
 
@@ -1688,8 +2050,11 @@ class QringSystem:
 
 
         try:
+
             self.signalr.stop_connection()
+
         except Exception:
+
             pass
 
 
@@ -1725,6 +2090,7 @@ if __name__ == "__main__":
 
     system = None
 
+
     try:
 
         system = QringSystem()
@@ -1742,9 +2108,10 @@ if __name__ == "__main__":
     except Exception as e:
 
         print()
-        print("================================")
+        print("==============================")
         print("BEKLENMEYEN PROGRAM HATASI")
-        print("================================")
+        print("==============================")
+
         print(e)
 
         traceback.print_exc()
