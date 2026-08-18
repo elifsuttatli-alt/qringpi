@@ -31,58 +31,55 @@ PASSWORD = "Aa123456."
 # DEVICE ID'LER
 # ============================================================
 
-# 1. fiziksel buton -> Taksi
 TAXI_DEVICE_ID = (
     "4F5ADCB3E377A2B06409DC96D96B45CC6FFFCE8A137C9CDC50460F1CF233C1FA"
 )
 
-# 2. fiziksel buton -> normal CallStart
 CALL_DEVICE_ID = (
     "49B7E50FBB53A79454424DA3B8053F8EEC2B0428B202B21C835B203C9716426F"
 )
 
-# Keypad ile blok / daire araması
 RESIDENCE_CALL_DEVICE_ID = (
     "289AF5D65ABDC9FFB2FE7DBE1AA66A9D5A2C8D5C5ACF269E87D701CB868E1723"
 )
 
-# Residence cihaz numarası
 RESIDENCE_DEVICE_ID = 102025
 
 SWITCH_ID = "1002533340"
 
 
 # ============================================================
-# FIZIKSEL BUTON GPIO'LARI
+# FIZIKSEL BUTONLAR
 # ============================================================
 
-TAXI_BUTTON_PIN = 17       # Fiziksel Pin 11
-CALL_BUTTON_PIN = 27       # Fiziksel Pin 13
-SWITCH_BUTTON_PIN = 22     # Fiziksel Pin 15
+TAXI_BUTTON_PIN = 17          # Fiziksel Pin 11
+CALL_BUTTON_PIN = 27          # Fiziksel Pin 13
+SWITCH_BUTTON_PIN = 22        # Fiziksel Pin 15
+RESIDENCE_BUTTON_PIN = 16     # Fiziksel Pin 36
 
-POWER_BUTTON_PIN = 12      # Fiziksel Pin 32
+POWER_BUTTON_PIN = 12         # Fiziksel Pin 32
 
 
 # ============================================================
 # TRAFIK LAMBASI
 # ============================================================
 
-BOOT_GREEN_PIN = 5         # Fiziksel Pin 29
-BOOT_YELLOW_PIN = 6        # Fiziksel Pin 31
-BOOT_RED_PIN = 13          # Fiziksel Pin 33
+BOOT_GREEN_PIN = 5
+BOOT_YELLOW_PIN = 6
+BOOT_RED_PIN = 13
 
 
 # ============================================================
-# AYRI DURUM LED'LERI
+# AYRI DURUM LEDLERI
 # ============================================================
 
-ACTION_GREEN_PIN = 23      # Fiziksel Pin 16
-ACTION_YELLOW_PIN = 24     # Fiziksel Pin 18
-ACTION_RED_PIN = 25        # Fiziksel Pin 22
+ACTION_GREEN_PIN = 23
+ACTION_YELLOW_PIN = 24
+ACTION_RED_PIN = 25
 
 
 # ============================================================
-# 4x4 KEYPAD GPIO
+# 4x4 KEYPAD
 # ============================================================
 
 ROWS = [4, 7, 8, 9]
@@ -132,29 +129,10 @@ class OLEDDisplay:
 
             with canvas(self.device) as draw:
 
-                draw.text(
-                    (0, 0),
-                    str(line1),
-                    fill="white"
-                )
-
-                draw.text(
-                    (0, 16),
-                    str(line2),
-                    fill="white"
-                )
-
-                draw.text(
-                    (0, 32),
-                    str(line3),
-                    fill="white"
-                )
-
-                draw.text(
-                    (0, 48),
-                    str(line4),
-                    fill="white"
-                )
+                draw.text((0, 0), str(line1), fill="white")
+                draw.text((0, 16), str(line2), fill="white")
+                draw.text((0, 32), str(line3), fill="white")
+                draw.text((0, 48), str(line4), fill="white")
 
 
     def clear(self):
@@ -169,12 +147,7 @@ class OLEDDisplay:
 
 class StatusLEDs:
 
-    def __init__(
-        self,
-        green_pin,
-        yellow_pin,
-        red_pin
-    ):
+    def __init__(self, green_pin, yellow_pin, red_pin):
 
         self.green = LED(green_pin)
         self.yellow = LED(yellow_pin)
@@ -273,7 +246,7 @@ def main():
 
 
     # ========================================================
-    # LED GRUPLARI
+    # LEDLER
     # ========================================================
 
     boot_leds = StatusLEDs(
@@ -290,7 +263,7 @@ def main():
 
 
     # ========================================================
-    # KEYPAD GPIO
+    # KEYPAD
     # ========================================================
 
     keypad_rows = [
@@ -311,7 +284,7 @@ def main():
 
 
     # ========================================================
-    # FIZIKSEL BUTONLAR
+    # BUTONLAR
     # ========================================================
 
     btn_taxi = Button(
@@ -332,6 +305,12 @@ def main():
         bounce_time=0.1
     )
 
+    btn_residence = Button(
+        RESIDENCE_BUTTON_PIN,
+        pull_up=True,
+        bounce_time=0.1
+    )
+
     power_button = Button(
         POWER_BUTTON_PIN,
         pull_up=True,
@@ -340,11 +319,13 @@ def main():
 
 
     # ========================================================
-    # SISTEM DEGISKENLERI
+    # SISTEM DURUMU
     # ========================================================
 
     system_active = False
     system_starting = False
+
+    residence_mode = False
 
     api = None
 
@@ -366,69 +347,33 @@ def main():
 
     blocks_cache = []
 
-    keypad_state_lock = threading.Lock()
-
 
     # ========================================================
-    # BASLANGIC DURUMU
-    # ========================================================
-
-    boot_leds.fail()
-    action_leds.off()
-
-    oled.show(
-        "QRING SISTEM",
-        "",
-        "SISTEM KAPALI",
-        "ON TUSUNA BASIN"
-    )
-
-
-    print("\n=======================================================")
-    print("              QRING RASPBERRY PI SISTEMI")
-    print("=======================================================")
-    print("[SISTEM] Program calisiyor.")
-    print("[SISTEM] Sistem KAPALI.")
-    print("[LED] Trafik lambasi -> KIRMIZI")
-    print("ON/OFF butonuna basarak sistemi baslatin.")
-    print("=======================================================\n")
-
-
-    # ========================================================
-    # OLED ANA EKRAN
+    # ANA MENU
     # ========================================================
 
     def show_home():
 
         oled.show(
-            "QRING SISTEM",
-            "SISTEM AKTIF",
-            "BLOK: A B C D",
-            "SECIM YAPIN"
+            "1: TAKSI",
+            "2: CAGRI",
+            "3: SWITCH",
+            "4: APARTMAN"
         )
 
 
     # ========================================================
-    # TERMINAL MENU
+    # APARTMAN BLOK SECIM EKRANI
     # ========================================================
 
-    def show_menu():
+    def show_block_selection():
 
-        print("\n=======================================================")
-        print("                    SISTEM AKTIF")
-        print("=======================================================")
-        print("BUTON 1 -> Taksi Cagir")
-        print("BUTON 2 -> Cagri Baslat")
-        print("BUTON 3 -> Anahtar/Role")
-        print("")
-        print("KEYPAD:")
-        print("A/B/C/D -> Blok sec")
-        print("0-9     -> Daire numarasi")
-        print("#       -> Ara")
-        print("*       -> Temizle / Geri")
-        print("")
-        print("ON/OFF -> Sistemi Kapat")
-        print("=======================================================\n")
+        oled.show(
+            "APARTMAN CAGRI",
+            "BLOK SECIN",
+            "",
+            "A   B   C   D"
+        )
 
 
     # ========================================================
@@ -441,15 +386,13 @@ def main():
         nonlocal apartment_list
         nonlocal apartment_input
 
-        with keypad_state_lock:
-
-            selected_block = None
-            apartment_list = []
-            apartment_input = ""
+        selected_block = None
+        apartment_list = []
+        apartment_input = ""
 
 
     # ========================================================
-    # BLOCK BUL
+    # BLOK BUL
     # ========================================================
 
     def find_block(blocks, letter):
@@ -473,17 +416,10 @@ def main():
     # DAIRE BUL
     # ========================================================
 
-    def find_apartment(
-        apartments,
-        entered_number
-    ):
+    def find_apartment(apartments, entered_number):
 
-        # ----------------------------------------------------
-        # Once apartmentNo alanina bak
-        # Ornek:
-        #
-        # Yonetici -> apartmentNo = 1
-        # ----------------------------------------------------
+        # Önce apartmentNo alanına bak.
+        # Örneğin Yönetici -> apartmentNo = 1
 
         for apartment in apartments:
 
@@ -497,19 +433,9 @@ def main():
                     return apartment
 
 
-        # ----------------------------------------------------
-        # apartmentNo yoksa apartmentName kullan
-        #
-        # Daire 2
-        # Daire 3
-        # Daire 4
-        # ----------------------------------------------------
+        # apartmentNo boşsa "Daire X" adına bak.
 
-        target = (
-            f"Daire {entered_number}"
-            .casefold()
-        )
-
+        target = f"Daire {entered_number}".casefold()
 
         for apartment in apartments:
 
@@ -521,7 +447,6 @@ def main():
             if name == target:
                 return apartment
 
-
         return None
 
 
@@ -531,29 +456,18 @@ def main():
 
     def read_key():
 
-        for row_index, row in enumerate(
-            keypad_rows
-        ):
+        for row_index, row in enumerate(keypad_rows):
 
             row.off()
 
             time.sleep(0.002)
 
-
-            for col_index, col in enumerate(
-                keypad_cols
-            ):
+            for col_index, col in enumerate(keypad_cols):
 
                 if col.is_active:
 
-                    key = KEYS[
-                        row_index
-                    ][
-                        col_index
-                    ]
+                    key = KEYS[row_index][col_index]
 
-
-                    # Tus birakilana kadar bekle
                     while (
                         col.is_active
                         and not stop_event.is_set()
@@ -561,16 +475,13 @@ def main():
 
                         time.sleep(0.02)
 
-
                     row.on()
 
                     time.sleep(0.05)
 
                     return key
 
-
             row.on()
-
 
         return None
 
@@ -584,25 +495,17 @@ def main():
         if not system_active:
             return
 
-
-        print("\n=======================================================")
+        print("\n======================================")
         print("CAGRI REDDEDILDI")
-        print("=======================================================")
-
+        print("======================================")
 
         action_leds.fail()
-
 
         oled.show(
             "CAGRI",
             "",
-            "CAGRI REDDEDILDI",
-            "SONUC: HATA"
-        )
-
-
-        print(
-            "[LED] Islem durumu -> KIRMIZI"
+            "REDDEDILDI",
+            ""
         )
 
 
@@ -612,22 +515,19 @@ def main():
 
 
     # ========================================================
-    # SIGNALR BAGLANTI MONITORU
+    # SIGNALR MONITOR
     # ========================================================
 
     def connection_monitor():
 
         previous_connected = None
 
-
         while not stop_event.is_set():
 
             if not system_active:
 
                 previous_connected = None
-
                 time.sleep(0.2)
-
                 continue
 
 
@@ -636,7 +536,6 @@ def main():
             )
 
 
-            # Sadece durum DEGISTIGINDE ekran/LED degistir
             if connected != previous_connected:
 
                 if connected:
@@ -647,20 +546,22 @@ def main():
                         "[SIGNALR] Baglanti aktif."
                     )
 
-
-                    # Eger kopup geri geldiyse
+                    # Bağlantı koptu ve tekrar geldiyse
                     if previous_connected is False:
 
                         oled.show(
                             "QRING SISTEM",
+                            "",
                             "BAGLANTI",
-                            "YENIDEN KURULDU",
-                            ""
+                            "GERI GELDI"
                         )
 
                         time.sleep(1)
 
-                        show_home()
+                        if residence_mode:
+                            show_block_selection()
+                        else:
+                            show_home()
 
 
                 else:
@@ -673,9 +574,9 @@ def main():
 
                     oled.show(
                         "QRING SISTEM",
-                        "BAGLANTI KOPTU",
                         "",
-                        "YENIDEN BAGLANIYOR"
+                        "BAGLANTI KOPTU",
+                        "BEKLEYIN..."
                     )
 
 
@@ -686,7 +587,7 @@ def main():
 
 
     # ========================================================
-    # SISTEMI BASLAT
+    # SISTEM BASLAT
     # ========================================================
 
     def start_system():
@@ -694,40 +595,30 @@ def main():
         nonlocal system_active
         nonlocal system_starting
         nonlocal api
+        nonlocal residence_mode
         nonlocal blocks_cache
 
 
         if system_active:
-
-            print(
-                "[SISTEM] Sistem zaten aktif."
-            )
-
             return
 
-
         if system_starting:
-
-            print(
-                "[SISTEM] Sistem zaten baslatiliyor."
-            )
-
             return
 
 
         system_starting = True
 
+        residence_mode = False
+
         reset_keypad_state()
 
 
-        print("\n=======================================================")
-        print("[SISTEM] BASLATILIYOR")
-        print("=======================================================")
+        print("\n======================================")
+        print("SISTEM BASLATILIYOR")
+        print("======================================")
 
 
-        # Baglanti kurulurken SARI
         boot_leds.loading()
-
         action_leds.off()
 
 
@@ -739,16 +630,11 @@ def main():
         )
 
 
-        print(
-            "[LED] Trafik lambasi -> SARI"
-        )
-
-
         try:
 
-            # =================================================
+            # -----------------------------------------------
             # SESSION
-            # =================================================
+            # -----------------------------------------------
 
             session = create_api_session()
 
@@ -757,13 +643,11 @@ def main():
             )
 
 
-            # =================================================
+            # -----------------------------------------------
             # LOGIN
-            # =================================================
+            # -----------------------------------------------
 
-            print(
-                "[SISTEM] Oturum aciliyor..."
-            )
+            print("[SISTEM] Login yapiliyor...")
 
 
             token = api.login(
@@ -779,13 +663,7 @@ def main():
                 )
 
 
-            print(
-                "[SISTEM] Login basarili."
-            )
-
-            print(
-                "[SISTEM] Token alindi."
-            )
+            print("[SISTEM] Token alindi.")
 
 
             oled.show(
@@ -796,14 +674,9 @@ def main():
             )
 
 
-            # =================================================
+            # -----------------------------------------------
             # SIGNALR
-            # =================================================
-
-            print(
-                "[SISTEM] SignalR baglantisi kuruluyor..."
-            )
-
+            # -----------------------------------------------
 
             connected = signalr.start_connection(
                 token=token,
@@ -818,31 +691,25 @@ def main():
                 )
 
 
-            # =================================================
-            # SISTEM AKTIF
-            # =================================================
+            # -----------------------------------------------
+            # AKTIF
+            # -----------------------------------------------
 
             system_active = True
             system_starting = False
+
+            residence_mode = False
+
+            blocks_cache = []
 
 
             boot_leds.success()
 
 
-            print(
-                "[SISTEM] Sistem AKTIF."
-            )
-
-            print(
-                "[LED] Trafik lambasi -> YESIL"
-            )
+            print("[SISTEM] Sistem AKTIF.")
+            print("[LED] Trafik lambasi -> YESIL")
 
 
-            # Blok cache temiz baslasin
-            blocks_cache = []
-
-
-            show_menu()
             show_home()
 
 
@@ -850,10 +717,12 @@ def main():
 
             system_active = False
             system_starting = False
+            residence_mode = False
 
 
             print(
-                f"[SISTEM HATA] {e}"
+                "[SISTEM HATA]",
+                e
             )
 
 
@@ -863,7 +732,7 @@ def main():
             oled.show(
                 "QRING SISTEM",
                 "",
-                "BAGLANTI HATASI",
+                "HATA",
                 "SISTEM KAPALI"
             )
 
@@ -872,23 +741,20 @@ def main():
 
 
     # ========================================================
-    # SISTEMI KAPAT
+    # SISTEM KAPAT
     # ========================================================
 
     def stop_system():
 
         nonlocal system_active
         nonlocal system_starting
+        nonlocal residence_mode
         nonlocal blocks_cache
-
-
-        print("\n=======================================================")
-        print("[SISTEM] KAPATILIYOR")
-        print("=======================================================")
 
 
         system_active = False
         system_starting = False
+        residence_mode = False
 
         blocks_cache = []
 
@@ -896,7 +762,6 @@ def main():
 
 
         signalr.stop_connection()
-
 
         action_leds.off()
         boot_leds.fail()
@@ -910,17 +775,11 @@ def main():
         )
 
 
-        print(
-            "[LED] Trafik lambasi -> KIRMIZI"
-        )
-
-        print(
-            "[SISTEM] Sistem kapali."
-        )
+        print("[SISTEM] Sistem kapali.")
 
 
     # ========================================================
-    # POWER BUTTON
+    # POWER
     # ========================================================
 
     def toggle_power():
@@ -934,10 +793,7 @@ def main():
 
         try:
 
-            if (
-                system_active
-                or system_starting
-            ):
+            if system_active or system_starting:
 
                 stop_system()
 
@@ -958,14 +814,6 @@ def main():
     def taxi_action():
 
         if not system_active:
-
-            oled.show(
-                "UYARI",
-                "",
-                "SISTEM KAPALI",
-                ""
-            )
-
             return
 
 
@@ -973,19 +821,10 @@ def main():
             blocking=False
         ):
 
-            print(
-                "[UYARI] Baska islem devam ediyor."
-            )
-
             return
 
 
         try:
-
-            print(
-                "\nTAKSI CAGIRILIYOR..."
-            )
-
 
             action_leds.loading()
 
@@ -1004,7 +843,7 @@ def main():
 
 
             print(
-                "[TAKSI] Yanit:",
+                "[TAKSI]",
                 result
             )
 
@@ -1016,7 +855,7 @@ def main():
                 "TAKSI",
                 "",
                 "BASARILI",
-                "ISTEK GONDERILDI"
+                ""
             )
 
 
@@ -1035,7 +874,7 @@ def main():
                 "TAKSI",
                 "",
                 "HATA",
-                "ISTEK BASARISIZ"
+                ""
             )
 
 
@@ -1045,20 +884,12 @@ def main():
 
 
     # ========================================================
-    # BUTON 2 -> NORMAL CAGRI
+    # BUTON 2 -> CAGRI
     # ========================================================
 
     def call_action():
 
         if not system_active:
-
-            oled.show(
-                "UYARI",
-                "",
-                "SISTEM KAPALI",
-                ""
-            )
-
             return
 
 
@@ -1066,19 +897,10 @@ def main():
             blocking=False
         ):
 
-            print(
-                "[UYARI] Baska islem devam ediyor."
-            )
-
             return
 
 
         try:
-
-            print(
-                "\nCAGRI BASLATILIYOR..."
-            )
-
 
             action_leds.loading()
 
@@ -1097,7 +919,7 @@ def main():
 
 
             print(
-                "[CAGRI] Yanit:",
+                "[CAGRI]",
                 result
             )
 
@@ -1108,7 +930,7 @@ def main():
             oled.show(
                 "CAGRI",
                 "",
-                "CAGRI GONDERILDI",
+                "GONDERILDI",
                 ""
             )
 
@@ -1128,7 +950,7 @@ def main():
                 "CAGRI",
                 "",
                 "HATA",
-                "CAGRI BASARISIZ"
+                ""
             )
 
 
@@ -1144,14 +966,6 @@ def main():
     def switch_action():
 
         if not system_active:
-
-            oled.show(
-                "UYARI",
-                "",
-                "SISTEM KAPALI",
-                ""
-            )
-
             return
 
 
@@ -1159,19 +973,10 @@ def main():
             blocking=False
         ):
 
-            print(
-                "[UYARI] Baska islem devam ediyor."
-            )
-
             return
 
 
         try:
-
-            print(
-                "\nSWITCH ISTEGI..."
-            )
-
 
             action_leds.loading()
 
@@ -1191,7 +996,7 @@ def main():
 
 
             print(
-                "[SWITCH] Yanit:",
+                "[SWITCH]",
                 result
             )
 
@@ -1232,6 +1037,51 @@ def main():
 
 
     # ========================================================
+    # BUTON 4 -> APARTMAN MODU
+    # ========================================================
+
+    def residence_action():
+
+        nonlocal residence_mode
+
+
+        if not system_active:
+            return
+
+
+        # Apartman modu kapalıysa aç
+        if not residence_mode:
+
+            residence_mode = True
+
+            reset_keypad_state()
+
+
+            print(
+                "[APARTMAN] Apartman cagri modu acildi."
+            )
+
+
+            show_block_selection()
+
+
+        # Zaten açıksa butona tekrar basınca ana menüye dön
+        else:
+
+            residence_mode = False
+
+            reset_keypad_state()
+
+
+            print(
+                "[APARTMAN] Apartman cagri modu kapatildi."
+            )
+
+
+            show_home()
+
+
+    # ========================================================
     # KEYPAD TUS ISLEME
     # ========================================================
 
@@ -1241,9 +1091,15 @@ def main():
         nonlocal apartment_list
         nonlocal apartment_input
         nonlocal blocks_cache
+        nonlocal residence_mode
 
 
         if not system_active:
+            return
+
+
+        # Apartman modu açık değilse keypad hiçbir şey yapmasın.
+        if not residence_mode:
             return
 
 
@@ -1254,11 +1110,24 @@ def main():
 
 
         # ====================================================
-        # BLOK SECIMI
+        # HENUZ BLOK SECILMEDI
         # ====================================================
 
         if selected_block is None:
 
+            # * -> Apartman modundan çık
+            if key == "*":
+
+                residence_mode = False
+
+                reset_keypad_state()
+
+                show_home()
+
+                return
+
+
+            # Sadece A/B/C/D kabul et
             if key not in [
                 "A",
                 "B",
@@ -1266,30 +1135,14 @@ def main():
                 "D"
             ]:
 
-                oled.show(
-                    "BLOK SECIN",
-                    "",
-                    "A  B  C  D",
-                    ""
-                )
+                show_block_selection()
 
                 return
 
 
-            # -----------------------------------------------
-            # API'den bloklari al
-            # -----------------------------------------------
-
             if not action_lock.acquire(
                 blocking=False
             ):
-
-                oled.show(
-                    "UYARI",
-                    "",
-                    "BASKA ISLEM",
-                    "DEVAM EDIYOR"
-                )
 
                 return
 
@@ -1297,19 +1150,17 @@ def main():
             try:
 
                 oled.show(
-                    "BLOKLAR",
+                    "APARTMAN",
                     "",
-                    "YUKLENIYOR...",
-                    ""
+                    "BLOK",
+                    "YUKLENIYOR..."
                 )
 
 
                 if not blocks_cache:
 
-                    blocks_cache = (
-                        api.get_block_list(
-                            RESIDENCE_DEVICE_ID
-                        )
+                    blocks_cache = api.get_block_list(
+                        RESIDENCE_DEVICE_ID
                     )
 
 
@@ -1324,33 +1175,26 @@ def main():
                     oled.show(
                         "HATA",
                         "",
-                        "BLOK BULUNAMADI",
+                        "BLOK YOK",
                         key
                     )
 
                     return
 
 
-                # Daireleri API'den al
-                apartments = (
-                    api.get_apartment_list(
-                        block["id"]
-                    )
+                apartments = api.get_apartment_list(
+                    block["id"]
                 )
 
 
-                with keypad_state_lock:
-
-                    selected_block = block
-                    apartment_list = apartments
-                    apartment_input = ""
+                selected_block = block
+                apartment_list = apartments
+                apartment_input = ""
 
 
                 print(
                     "[KEYPAD] Blok:",
-                    block["blockName"],
-                    "ID:",
-                    block["id"]
+                    block["blockName"]
                 )
 
 
@@ -1365,7 +1209,7 @@ def main():
             except Exception as e:
 
                 print(
-                    "[KEYPAD BLOK HATA]",
+                    "[BLOK HATA]",
                     e
                 )
 
@@ -1390,12 +1234,12 @@ def main():
 
 
         # ====================================================
-        # * -> TEMIZLE / GERI
+        # * -> GERI
         # ====================================================
 
         if key == "*":
 
-            # Numara yazilmissa sadece numarayi temizle
+            # Daire numarası yazılmışsa sadece numarayı sil
             if apartment_input:
 
                 apartment_input = ""
@@ -1411,19 +1255,21 @@ def main():
                 )
 
 
-            # Numara yoksa blok secimine geri don
+            # Numara yoksa blok seçim ekranına dön
             else:
 
-                reset_keypad_state()
+                selected_block = None
+                apartment_list = []
+                apartment_input = ""
 
-                show_home()
+                show_block_selection()
 
 
             return
 
 
         # ====================================================
-        # RAKAM GIRISI
+        # SAYI
         # ====================================================
 
         if key.isdigit():
@@ -1447,7 +1293,7 @@ def main():
 
 
         # ====================================================
-        # # -> CAGRIYI BASLAT
+        # # -> ARA
         # ====================================================
 
         if key == "#":
@@ -1482,89 +1328,51 @@ def main():
                 )
 
 
-                print(
-                    "[KEYPAD] Daire bulunamadi:",
-                    apartment_input
-                )
-
-
                 apartment_input = ""
 
                 return
 
 
-            # -----------------------------------------------
-            # CAGRI
-            # -----------------------------------------------
-
             if not action_lock.acquire(
                 blocking=False
             ):
-
-                oled.show(
-                    "UYARI",
-                    "",
-                    "BASKA ISLEM",
-                    "DEVAM EDIYOR"
-                )
 
                 return
 
 
             try:
 
-                block_id = (
-                    selected_block["id"]
-                )
+                block_id = selected_block["id"]
+                apartment_id = apartment["id"]
 
-                apartment_id = (
-                    apartment["id"]
-                )
-
-                apartment_name = (
-                    apartment.get(
-                        "apartmentName",
-                        apartment_input
-                    )
+                apartment_name = apartment.get(
+                    "apartmentName",
+                    apartment_input
                 )
 
 
-                print(
-                    "\n==================================="
-                )
-
-                print(
-                    "KEYPAD CAGRI BASLATILIYOR"
-                )
-
+                print()
+                print("======================================")
+                print("APARTMAN CAGRI")
                 print(
                     "Blok:",
-                    selected_block[
-                        "blockName"
-                    ]
+                    selected_block["blockName"]
                 )
-
                 print(
                     "blockId:",
                     block_id
                 )
-
                 print(
                     "Daire:",
                     apartment_name
                 )
-
                 print(
                     "apartmentId:",
                     apartment_id
                 )
-
-                print(
-                    "==================================="
-                )
+                print("======================================")
 
 
-                # Islem LED'i SARI
                 action_leds.loading()
 
 
@@ -1579,9 +1387,7 @@ def main():
 
 
                 result = api.start_call(
-                    device_unique_id=(
-                        RESIDENCE_CALL_DEVICE_ID
-                    ),
+                    device_unique_id=RESIDENCE_CALL_DEVICE_ID,
                     guest_name="Keypad",
                     block_id=block_id,
                     apartment_id=apartment_id,
@@ -1590,12 +1396,11 @@ def main():
 
 
                 print(
-                    "[KEYPAD CALL] Yanit:",
+                    "[APARTMAN CALL]",
                     result
                 )
 
 
-                # Basarili -> YESIL
                 action_leds.success()
 
 
@@ -1609,15 +1414,16 @@ def main():
                 )
 
 
-                # Yeni cagri icin state sifirla.
-                # OLED sonuc ekrani olarak kalir.
+                # Çağrıdan sonra apartman modunu kapat.
+                residence_mode = False
+
                 reset_keypad_state()
 
 
             except Exception as e:
 
                 print(
-                    "[KEYPAD CALL HATA]",
+                    "[APARTMAN CALL HATA]",
                     e
                 )
 
@@ -1629,9 +1435,11 @@ def main():
                     "CAGRI",
                     "",
                     "HATA",
-                    "ISTEK BASARISIZ"
+                    "BASARISIZ"
                 )
 
+
+                residence_mode = False
 
                 reset_keypad_state()
 
@@ -1639,9 +1447,6 @@ def main():
             finally:
 
                 action_lock.release()
-
-
-            return
 
 
     # ========================================================
@@ -1652,10 +1457,11 @@ def main():
 
         while not stop_event.is_set():
 
-            if not system_active:
+            # Sistem veya apartman modu kapalıysa keypad taramasını
+            # yavaşlat.
+            if not system_active or not residence_mode:
 
                 time.sleep(0.1)
-
                 continue
 
 
@@ -1666,9 +1472,7 @@ def main():
 
                 try:
 
-                    process_key(
-                        key
-                    )
+                    process_key(key)
 
                 except Exception as e:
 
@@ -1704,20 +1508,21 @@ def main():
 
 
     # ========================================================
-    # FIZIKSEL BUTON EVENTLERI
+    # BUTON EVENTLERI
     # ========================================================
 
     btn_taxi.when_pressed = taxi_action
-
     btn_call.when_pressed = call_action
-
     btn_switch.when_pressed = switch_action
+
+    # Yeni 4. buton
+    btn_residence.when_pressed = residence_action
 
     power_button.when_pressed = toggle_power
 
 
     # ========================================================
-    # PROGRAMI ACIK TUT
+    # PROGRAM
     # ========================================================
 
     try:
@@ -1728,35 +1533,28 @@ def main():
     except KeyboardInterrupt:
 
         print(
-            "\n[SISTEM] CTRL+C algilandi."
+            "\n[SISTEM] Program kapatiliyor."
         )
 
-
-    # ========================================================
-    # TEMIZLIK
-    # ========================================================
 
     finally:
 
         stop_event.set()
 
-
         signalr.stop_connection()
-
 
         boot_leds.close()
         action_leds.close()
 
-
         btn_taxi.close()
         btn_call.close()
         btn_switch.close()
+        btn_residence.close()
         power_button.close()
 
 
         for row in keypad_rows:
             row.close()
-
 
         for col in keypad_cols:
             col.close()
@@ -1769,17 +1567,9 @@ def main():
             "KAPATILDI"
         )
 
-
         time.sleep(1)
 
-
         oled.clear()
-
-
-        print(
-            "[SISTEM] Program sonlandirildi."
-        )
-
 
         sys.exit(0)
 
