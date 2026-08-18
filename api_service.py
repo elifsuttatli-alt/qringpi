@@ -117,3 +117,20 @@ class APIService:
         response.raise_for_status()
 
         return response.json()
+
+    def get_apartment_users(self, apartment_id: int):
+        url = f"{self.base_url}/api/Residence/GetApartmentUsers"
+
+        params = {
+            "apartmentId": apartment_id
+        }
+
+        response = self.session.get(
+            url,
+            params=params,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        return response.json()
