@@ -83,3 +83,37 @@ class APIService:
         response = self.session.post(url, json=payload, timeout=10)
         response.raise_for_status()
         return response.json()
+
+    def get_block_list(self, device_id: int = 102025):
+        url = f"{self.base_url}/api/Residence/GetBlockList"
+
+        params = {
+            "deviceId": device_id
+        }
+
+        response = self.session.get(
+            url,
+            params=params,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        return response.json()
+
+    def get_apartment_list(self, block_id: int):
+        url = f"{self.base_url}/api/Residence/GetCallableBlockApartmentList"
+
+        params = {
+            "blockId": block_id
+        }
+
+        response = self.session.get(
+            url,
+            params=params,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        return response.json()
