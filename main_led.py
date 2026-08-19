@@ -11,7 +11,7 @@ from gpiozero import (
 
 from interceptor import create_api_session
 from api_service import APIService
-from signalr_service import SignalRService
+from signalr_service_ import SignalRService
 
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
@@ -24,7 +24,6 @@ from luma.core.render import canvas
 
 USERNAME = "samsung.canli@fsitip.com"
 PASSWORD = "Aa123456."
-
 
 # ============================================================
 # DEVICE BILGILERI
@@ -114,7 +113,6 @@ def oled_safe(text):
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    # OLED satirina sigacak kadar kisalt
     return text[:21]
 
 
@@ -203,6 +201,7 @@ class StatusLEDs:
         self.red = LED(red_pin)
 
         self.lock = threading.Lock()
+
         self.state = None
 
         self.off()
@@ -280,13 +279,11 @@ class QringSystem:
 
         print("[SISTEM] Donanim hazirlaniyor...")
 
-
         # ====================================================
         # OLED
         # ====================================================
 
         self.oled = OLEDDisplay()
-
 
         # ====================================================
         # LEDLER
@@ -303,7 +300,6 @@ class QringSystem:
             ACTION_YELLOW_PIN,
             ACTION_RED_PIN
         )
-
 
         # ====================================================
         # BUTONLAR
@@ -368,17 +364,25 @@ class QringSystem:
         self.system_active = False
         self.system_starting = False
 
-        self.residence_mode = False
 
-        # block / residents
+        # ====================================================
+        # TAKSI MODU
+        # ====================================================
+
+        self.taxi_mode = False
+        self.taxi_count = ""
+
+
+        # ====================================================
+        # APARTMAN MODU
+        # ====================================================
+
+        self.residence_mode = False
         self.residence_stage = "block"
 
         self.selected_block = None
 
-        # Bloktaki kisi listesi
         self.residents = []
-
-        # OLED'de hangi kisi gorunuyor
         self.resident_index = 0
 
         self.blocks_cache = []
@@ -408,7 +412,7 @@ class QringSystem:
 
 
         # ====================================================
-        # BUTON CALLBACK
+        # BUTON EVENTLERI
         # ====================================================
 
         self.btn_power.when_pressed = (
@@ -417,11 +421,14 @@ class QringSystem:
             )
         )
 
+
+        # TAKSI ARTIK DIREKT API CAGIRMIYOR
+        # ONCE ADEDI SORUYOR
+
         self.btn_taxi.when_pressed = (
-            lambda: self.run_async(
-                self.taxi_action
-            )
+            self.taxi_menu
         )
+
 
         self.btn_call.when_pressed = (
             lambda: self.run_async(
@@ -429,11 +436,13 @@ class QringSystem:
             )
         )
 
+
         self.btn_switch.when_pressed = (
             lambda: self.run_async(
                 self.switch_action
             )
         )
+
 
         self.btn_residence.when_pressed = (
             self.residence_action
@@ -500,7 +509,27 @@ class QringSystem:
 
 
     # ========================================================
-    # SECILI SAKINI GOSTER
+    # TAKSI EKRANI
+    # ========================================================
+
+    def show_taxi_menu(self):
+
+        shown = (
+            self.taxi_count
+            if self.taxi_count
+            else "_"
+        )
+
+        self.oled.show(
+            "TAKSI CAGIR",
+            "",
+            f"ADET: {shown}",
+            "#ONAY   *=IPTAL"
+        )
+
+
+    # ========================================================
+    # SECILI APARTMAN SAKINI
     # ========================================================
 
     def show_resident(self):
@@ -519,21 +548,24 @@ class QringSystem:
             return
 
 
-        # Index sinirlarini koru
         if self.resident_index < 0:
+
             self.resident_index = (
                 len(self.residents) - 1
             )
 
+
         if self.resident_index >= len(
             self.residents
         ):
+
             self.resident_index = 0
 
 
         item = self.residents[
             self.resident_index
         ]
+
 
         apartment = item["apartment"]
         user = item["user"]
@@ -544,21 +576,16 @@ class QringSystem:
             ""
         )
 
+
         name = user.get(
             "nameSurname",
             "Isimsiz"
         )
 
+
         current = self.resident_index + 1
         total = len(self.residents)
 
-
-        # Örnek:
-        #
-        # A BLOK 1/4
-        # DAIRE 2
-        # Samsung Canli
-        # 2> 8< #ARA *=GERI
 
         self.oled.show(
             (
@@ -572,7 +599,7 @@ class QringSystem:
 
 
     # ========================================================
-    # APARTMAN DURUMUNU SIFIRLA
+    # STATE RESET
     # ========================================================
 
     def reset_residence(self):
@@ -584,6 +611,12 @@ class QringSystem:
         self.residents = []
 
         self.resident_index = 0
+
+
+    def reset_taxi(self):
+
+        self.taxi_mode = False
+        self.taxi_count = ""
 
 
     # ========================================================
@@ -607,6 +640,7 @@ class QringSystem:
 
 
             if name == target:
+
                 return block
 
 
@@ -660,8 +694,9 @@ class QringSystem:
 
         self.system_starting = True
 
-        self.residence_mode = False
+        self.reset_taxi()
 
+        self.residence_mode = False
         self.reset_residence()
 
 
@@ -685,7 +720,10 @@ class QringSystem:
 
         try:
 
+            # -----------------------------------------------
             # API SESSION
+            # -----------------------------------------------
+
             session = create_api_session()
 
             self.api = APIService(
@@ -693,7 +731,10 @@ class QringSystem:
             )
 
 
+            # -----------------------------------------------
             # LOGIN
+            # -----------------------------------------------
+
             print("[SISTEM] Login...")
 
 
@@ -721,7 +762,10 @@ class QringSystem:
             )
 
 
+            # -----------------------------------------------
             # SIGNALR
+            # -----------------------------------------------
+
             connected = (
                 self.signalr.start_connection(
                     token=token,
@@ -737,13 +781,12 @@ class QringSystem:
                 )
 
 
-            # AKTIF
+            # -----------------------------------------------
+            # SISTEM AKTIF
+            # -----------------------------------------------
+
             self.system_active = True
             self.system_starting = False
-
-            self.residence_mode = False
-
-            self.blocks_cache = []
 
 
             self.boot_leds.success()
@@ -773,7 +816,12 @@ class QringSystem:
 
             self.system_active = False
             self.system_starting = False
+
+
+            self.reset_taxi()
+
             self.residence_mode = False
+            self.reset_residence()
 
 
             self.boot_leds.fail()
@@ -808,9 +856,13 @@ class QringSystem:
         self.system_active = False
         self.system_starting = False
 
-        self.residence_mode = False
 
+        self.reset_taxi()
+
+
+        self.residence_mode = False
         self.reset_residence()
+
 
         self.blocks_cache = []
 
@@ -828,6 +880,7 @@ class QringSystem:
 
         self.boot_leds.fail()
 
+
         self.show_power_off()
 
 
@@ -837,10 +890,57 @@ class QringSystem:
 
 
     # ========================================================
-    # TAKSI
+    # TAKSI MENUSU
     # ========================================================
 
-    def taxi_action(self):
+    def taxi_menu(self):
+
+        if not self.system_active:
+            return
+
+
+        # Taksi ekrani zaten aciksa:
+        # fiziksel butona tekrar basinca kapat
+
+        if self.taxi_mode:
+
+            self.reset_taxi()
+
+            self.show_home()
+
+            print(
+                "[TAKSI] Adet secimi iptal."
+            )
+
+            return
+
+
+        # Apartman modu aciksa kapat
+
+        if self.residence_mode:
+
+            self.residence_mode = False
+
+            self.reset_residence()
+
+
+        self.taxi_mode = True
+        self.taxi_count = ""
+
+
+        self.show_taxi_menu()
+
+
+        print(
+            "[TAKSI] Adet secimi acildi."
+        )
+
+
+    # ========================================================
+    # TAKSI API ISTEGI
+    # ========================================================
+
+    def taxi_action(self, count):
 
         if not self.system_active:
             return
@@ -849,29 +949,41 @@ class QringSystem:
         if not self.action_lock.acquire(
             blocking=False
         ):
+
             return
 
 
         try:
+
+            # Artik keypad girisi alma
+
+            self.taxi_mode = False
+
 
             self.action_leds.loading()
 
 
             self.oled.show(
                 "TAKSI",
-                "",
+                f"ADET: {count}",
                 "CAGIRILIYOR...",
                 ""
             )
 
 
             result = self.api.call_taxi(
-                device_unique_id=TAXI_DEVICE_ID
+                device_unique_id=TAXI_DEVICE_ID,
+                message=str(count)
             )
 
 
             print(
-                "[TAKSI]",
+                "[TAKSI] Adet:",
+                count
+            )
+
+            print(
+                "[TAKSI] Cevap:",
                 result
             )
 
@@ -881,7 +993,7 @@ class QringSystem:
 
             self.oled.show(
                 "TAKSI",
-                "",
+                f"ADET: {count}",
                 "BASARILI",
                 ""
             )
@@ -889,7 +1001,12 @@ class QringSystem:
 
             time.sleep(2)
 
+
+            self.taxi_count = ""
+
+
             if self.system_active:
+
                 self.show_home()
 
 
@@ -900,8 +1017,13 @@ class QringSystem:
                 e
             )
 
+            traceback.print_exc()
+
 
             self.action_leds.fail()
+
+
+            self.reset_taxi()
 
 
             self.oled.show(
@@ -930,6 +1052,7 @@ class QringSystem:
         if not self.action_lock.acquire(
             blocking=False
         ):
+
             return
 
 
@@ -970,8 +1093,26 @@ class QringSystem:
 
             time.sleep(2)
 
+
             if self.system_active:
-                self.show_home()
+
+                if self.taxi_mode:
+
+                    self.show_taxi_menu()
+
+                elif self.residence_mode:
+
+                    if self.residence_stage == "residents":
+
+                        self.show_resident()
+
+                    else:
+
+                        self.show_blocks()
+
+                else:
+
+                    self.show_home()
 
 
         except Exception as e:
@@ -1011,6 +1152,7 @@ class QringSystem:
         if not self.action_lock.acquire(
             blocking=False
         ):
+
             return
 
 
@@ -1054,8 +1196,26 @@ class QringSystem:
 
             time.sleep(2)
 
+
             if self.system_active:
-                self.show_home()
+
+                if self.taxi_mode:
+
+                    self.show_taxi_menu()
+
+                elif self.residence_mode:
+
+                    if self.residence_stage == "residents":
+
+                        self.show_resident()
+
+                    else:
+
+                        self.show_blocks()
+
+                else:
+
+                    self.show_home()
 
 
         except Exception as e:
@@ -1064,6 +1224,8 @@ class QringSystem:
                 "[SWITCH HATA]",
                 e
             )
+
+            traceback.print_exc()
 
 
             self.action_leds.fail()
@@ -1083,7 +1245,7 @@ class QringSystem:
 
 
     # ========================================================
-    # 4. BUTON -> APARTMAN MODU
+    # APARTMAN MODU
     # ========================================================
 
     def residence_action(self):
@@ -1091,6 +1253,15 @@ class QringSystem:
         if not self.system_active:
             return
 
+
+        # Taksi modu aciksa kapat
+
+        if self.taxi_mode:
+
+            self.reset_taxi()
+
+
+        # Apartman modu kapaliysa ac
 
         if not self.residence_mode:
 
@@ -1105,6 +1276,8 @@ class QringSystem:
                 "[APARTMAN] Mod acildi."
             )
 
+
+        # Apartman modu aciksa kapat
 
         else:
 
@@ -1132,6 +1305,7 @@ class QringSystem:
         if not self.action_lock.acquire(
             blocking=False
         ):
+
             return
 
 
@@ -1141,7 +1315,7 @@ class QringSystem:
 
 
             # -----------------------------------------------
-            # BLOKLAR
+            # BLOK LISTESI
             # -----------------------------------------------
 
             if not self.blocks_cache:
@@ -1160,6 +1334,8 @@ class QringSystem:
 
             if block is None:
 
+                self.action_leds.fail()
+
                 self.oled.show(
                     "HATA",
                     "",
@@ -1174,7 +1350,7 @@ class QringSystem:
 
 
             # -----------------------------------------------
-            # BLOKTAKI DAIRELER
+            # DAIRELER
             # -----------------------------------------------
 
             self.oled.show(
@@ -1194,10 +1370,6 @@ class QringSystem:
             )
 
 
-            # -----------------------------------------------
-            # HER DAIREDEKI KULLANICILARI AL
-            # -----------------------------------------------
-
             residents = []
 
 
@@ -1205,6 +1377,10 @@ class QringSystem:
                 apartments
             )
 
+
+            # -----------------------------------------------
+            # HER DAIRE ICIN GetApartmentUsers
+            # -----------------------------------------------
 
             for index, apartment in enumerate(
                 apartments,
@@ -1216,7 +1392,6 @@ class QringSystem:
                 ]
 
 
-                # OLED ilerleme
                 self.oled.show(
                     block[
                         "blockName"
@@ -1250,9 +1425,8 @@ class QringSystem:
                     continue
 
 
-                # -------------------------------------------
-                # Kullanici varsa listeye ekle
-                # -------------------------------------------
+                # Birden fazla kisi varsa da
+                # kod calismaya devam eder.
 
                 for user in users:
 
@@ -1340,6 +1514,7 @@ class QringSystem:
         if not self.action_lock.acquire(
             blocking=False
         ):
+
             return
 
 
@@ -1349,16 +1524,19 @@ class QringSystem:
                 self.resident_index
             ]
 
+
             apartment = item[
                 "apartment"
             ]
+
 
             user = item[
                 "user"
             ]
 
 
-            # isCallable acikca false ise arama
+            # Açıkça false ise çağrı yapma
+
             if user.get(
                 "isCallable"
             ) is False:
@@ -1384,14 +1562,17 @@ class QringSystem:
                 self.selected_block["id"]
             )
 
+
             apartment_id = (
                 apartment["id"]
             )
+
 
             apartment_name = apartment.get(
                 "apartmentName",
                 ""
             )
+
 
             name = user.get(
                 "nameSurname",
@@ -1402,10 +1583,7 @@ class QringSystem:
             print()
             print("==============================")
             print("APARTMAN CAGRI")
-            print(
-                "Kisi:",
-                name
-            )
+            print("Kisi:", name)
             print(
                 "Blok:",
                 self.selected_block[
@@ -1434,8 +1612,6 @@ class QringSystem:
             )
 
 
-            # Dikkat:
-            # API kisiye degil apartmentId'ye cagri atiyor.
             result = self.api.start_call(
                 device_unique_id=(
                     RESIDENCE_CALL_DEVICE_ID
@@ -1471,6 +1647,7 @@ class QringSystem:
 
             self.reset_residence()
 
+
             self.show_home()
 
 
@@ -1501,7 +1678,7 @@ class QringSystem:
 
 
     # ========================================================
-    # KEYPAD OKUMA
+    # KEYPAD OKU
     # ========================================================
 
     def read_key(self):
@@ -1550,15 +1727,12 @@ class QringSystem:
 
 
     # ========================================================
-    # KEYPAD ISLEMLERI
+    # KEYPAD ISLE
     # ========================================================
 
     def process_key(self, key):
 
         if not self.system_active:
-            return
-
-        if not self.residence_mode:
             return
 
 
@@ -1569,12 +1743,117 @@ class QringSystem:
 
 
         # ====================================================
-        # BLOK SECIMI
+        # 1) TAKSI MODU
+        # ====================================================
+
+        if self.taxi_mode:
+
+            # -----------------------------------------------
+            # * -> IPTAL
+            # -----------------------------------------------
+
+            if key == "*":
+
+                self.reset_taxi()
+
+                self.show_home()
+
+
+                print(
+                    "[TAKSI] Iptal edildi."
+                )
+
+                return
+
+
+            # -----------------------------------------------
+            # SAYI
+            # -----------------------------------------------
+
+            if key.isdigit():
+
+                # Maksimum 2 basamak
+
+                if len(
+                    self.taxi_count
+                ) < 2:
+
+                    # İlk karakter 0 olmasin
+
+                    if not (
+                        self.taxi_count == ""
+                        and key == "0"
+                    ):
+
+                        self.taxi_count += key
+
+
+                self.show_taxi_menu()
+
+                return
+
+
+            # -----------------------------------------------
+            # # -> ONAY
+            # -----------------------------------------------
+
+            if key == "#":
+
+                if not self.taxi_count:
+
+                    self.oled.show(
+                        "TAKSI CAGIR",
+                        "",
+                        "ADET GIRIN",
+                        "#ONAY   *=IPTAL"
+                    )
+
+                    return
+
+
+                count = int(
+                    self.taxi_count
+                )
+
+
+                print(
+                    "[TAKSI] Secilen adet:",
+                    count
+                )
+
+
+                self.run_async(
+                    lambda c=count:
+                    self.taxi_action(c)
+                )
+
+
+                return
+
+
+            # A/B/C/D taksi modunda bir sey yapmaz
+
+            return
+
+
+        # ====================================================
+        # TAKSI MODU DEGILSE VE APARTMAN DA DEGILSE
+        # KEYPAD'IN YAPACAGI BIR SEY YOK
+        # ====================================================
+
+        if not self.residence_mode:
+
+            return
+
+
+        # ====================================================
+        # 2) APARTMAN - BLOK SECIMI
         # ====================================================
 
         if self.residence_stage == "block":
 
             # * -> ana menu
+
             if key == "*":
 
                 self.residence_mode = False
@@ -1586,7 +1865,8 @@ class QringSystem:
                 return
 
 
-            # A/B/C/D
+            # A/B/C/D blok
+
             if key in [
                 "A",
                 "B",
@@ -1604,12 +1884,15 @@ class QringSystem:
 
 
         # ====================================================
-        # OTURANLAR LISTESI
+        # 3) APARTMAN - OTURANLAR
         # ====================================================
 
         if self.residence_stage == "residents":
 
-            # * -> blok secimine don
+            # -----------------------------------------------
+            # * -> blok secimine geri
+            # -----------------------------------------------
+
             if key == "*":
 
                 self.reset_residence()
@@ -1619,12 +1902,16 @@ class QringSystem:
                 return
 
 
-            # 2 -> sonraki kisi
+            # -----------------------------------------------
+            # 2 -> sonraki
+            # -----------------------------------------------
+
             if key == "2":
 
                 if self.residents:
 
                     self.resident_index += 1
+
 
                     if (
                         self.resident_index
@@ -1640,7 +1927,10 @@ class QringSystem:
                 return
 
 
-            # 8 -> onceki kisi
+            # -----------------------------------------------
+            # 8 -> onceki
+            # -----------------------------------------------
+
             if key == "8":
 
                 if self.residents:
@@ -1662,7 +1952,10 @@ class QringSystem:
                 return
 
 
-            # # -> ekrandaki daireyi ara
+            # -----------------------------------------------
+            # # -> ARA
+            # -----------------------------------------------
+
             if key == "#":
 
                 self.run_async(
@@ -1727,6 +2020,10 @@ class QringSystem:
 
             if connected != was_connected:
 
+                # -------------------------------------------
+                # BAGLANDI
+                # -------------------------------------------
+
                 if connected:
 
                     self.boot_leds.success()
@@ -1739,7 +2036,12 @@ class QringSystem:
                         )
 
 
-                        if self.residence_mode:
+                        if self.taxi_mode:
+
+                            self.show_taxi_menu()
+
+
+                        elif self.residence_mode:
 
                             if (
                                 self.residence_stage
@@ -1752,10 +2054,15 @@ class QringSystem:
 
                                 self.show_blocks()
 
+
                         else:
 
                             self.show_home()
 
+
+                # -------------------------------------------
+                # KOPTU
+                # -------------------------------------------
 
                 else:
 
@@ -1789,9 +2096,21 @@ class QringSystem:
 
         while not self.stop_event.is_set():
 
+            # Sistem kapaliysa keypad okuma
+
+            if not self.system_active:
+
+                time.sleep(0.1)
+
+                continue
+
+
+            # Ne taksi ne apartman modu varsa
+            # keypad gerekmiyor
+
             if (
-                not self.system_active
-                or not self.residence_mode
+                not self.taxi_mode
+                and not self.residence_mode
             ):
 
                 time.sleep(0.1)
@@ -1890,10 +2209,12 @@ class QringSystem:
 
 
         for row in self.keypad_rows:
+
             row.close()
 
 
         for col in self.keypad_cols:
+
             col.close()
 
 
